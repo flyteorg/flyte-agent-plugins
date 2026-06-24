@@ -426,6 +426,51 @@ they're silently ignored and `GetOAuth2Metadata` returns `unimplemented`. (b) co
 changes may not roll the pod — `kubectl rollout restart deploy/flyte` to be sure. (c) the
 `conditions.*` key must match the rendered backend service name (`<fullname>-http`).
 
+## Stable ALB across redeploys (anchor ingress)
+
+By default the ALB is owned by Flyte's ingresses, so `helm uninstall` deletes it and the next
+install mints a **new ALB with a new DNS name** — forcing a DNS re-point every cycle. To keep
+one stable endpoint, exploit the controller's rule that it keeps exactly **one ALB per
+`group.name` as long as ≥1 ingress in that group exists**: add a permanent "anchor" ingress in
+the group, applied **out-of-band (NOT in the helm release)**, so the ALB survives uninstall.
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flyte-alb-anchor
+  namespace: flyte
+  annotations:
+    alb.ingress.kubernetes.io/group.name: flyte            # SAME group as the flyte ingresses
+    alb.ingress.kubernetes.io/group.order: "100"           # lowest precedence; never shadows flyte rules
+    alb.ingress.kubernetes.io/scheme: internet-facing      # group-level annotations MUST match the
+    alb.ingress.kubernetes.io/target-type: ip              # flyte ingress group, else the controller
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'   # errors on conflicting config
+    alb.ingress.kubernetes.io/certificate-arn: <CERT_ARN>
+    # fixed-response backend => the anchor needs NO real service, so it stands alone when flyte is uninstalled:
+    alb.ingress.kubernetes.io/actions.anchor-ok: '{"type":"fixed-response","fixedResponseConfig":{"contentType":"text/plain","statusCode":"200","messageBody":"flyte-alb-anchor"}}'
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - { path: /__alb_anchor, pathType: ImplementationSpecific, backend: { service: { name: anchor-ok, port: { name: use-annotation } } } }
+```
+
+```bash
+kubectl --context <ctx> apply -f alb-anchor.yaml          # provisions the ALB once
+# point DNS at THIS ALB's name one time; it never changes again:
+kubectl --context <ctx> -n flyte get ingress flyte-alb-anchor -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+```
+
+Now `helm uninstall flyte` removes Flyte's rules but the anchor keeps the ALB (same DNS name)
+alive; `helm install` re-adds Flyte's listener rules (including the `authenticate-oidc` SSO
+rule) onto the surviving ALB. Verify the anchor still answers between deploys:
+`curl http://<alb>/__alb_anchor` → `200 flyte-alb-anchor`. (To intentionally delete the ALB,
+remove the anchor too.) Keeps the annotation-driven SSO config — the alternative, a fully
+pre-provisioned BYO ALB via the controller's `TargetGroupBinding` CRD + `ingress.create:
+false`, is more stable still but makes you hand-manage every listener/SSO rule yourself.
+
 ## Pruning run data from the DB
 
 To wipe run history without reinstalling, prune the DB directly. The v2 run data lives in
