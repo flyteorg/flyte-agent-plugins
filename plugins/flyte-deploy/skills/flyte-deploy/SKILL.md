@@ -282,7 +282,10 @@ cookie) but **CLI/SDK clients get 302'd** — add a higher-precedence `ingress.a
 
 1. Add the redirect URI **`https://<host>/oauth2/idpresponse`** to the OIDC app (fixed ALB
    callback path) — login fails without it.
-2. Create the OIDC Secret in the **ingress namespace** (keys exactly `clientID`/`clientSecret`):
+2. Create the OIDC Secret in the **ingress namespace** (keys exactly `clientID`/`clientSecret`).
+   **Have the USER run this command themselves** — do NOT ask them to paste the client secret
+   into the chat. Give them the command and ask them to run it (inline with a leading `! ` or
+   in their own terminal) so the secret goes straight into kubectl and never reaches the assistant:
    ```bash
    kubectl -n flyte create secret generic flyte-console-oidc \
      --from-literal=clientID=<oidc-client-id> --from-literal=clientSecret=<oidc-secret>
