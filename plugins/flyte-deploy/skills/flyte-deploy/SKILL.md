@@ -41,6 +41,33 @@ aws route53 list-hosted-zones --query 'HostedZones[].Name' --output text
 aws acm list-certificates --region $REGION --query 'CertificateSummaryList[].DomainName' --output text
 ```
 
+## Step 0 — Reuse an existing cluster?
+
+Before creating anything, list the EKS clusters already in the account/region and **ask the
+user whether to deploy onto one of them or stand up a fresh cluster**. Reusing skips Step 1
+(~15-20 min + the EKS control-plane + node cost).
+
+```bash
+aws eks list-clusters --region $REGION --query 'clusters' --output text
+```
+
+Present the list and let the user pick one (or choose "create new"). If they reuse one:
+
+```bash
+CLUSTER=<chosen-cluster>
+aws eks update-kubeconfig --region $REGION --name $CLUSTER --alias $CLUSTER   # writes + selects context
+kubectl --context $CLUSTER get nodes                                          # confirm reachable + Ready
+# Confirm IRSA is possible (the chart needs an OIDC provider on the cluster):
+aws eks describe-cluster --region $REGION --name $CLUSTER \
+  --query 'cluster.identity.oidc.issuer' --output text                        # empty => run: eksctl utils associate-iam-oidc-provider --cluster $CLUSTER --approve
+```
+
+Then **skip Step 1** and continue from Step 2. S3 (Step 2), RDS (Step 3), and the ALB
+controller (Step 4) may already exist on a reused cluster — check before recreating
+(`aws s3 ls`, `aws rds describe-db-instances`, `kubectl --context $CLUSTER -n kube-system get deploy aws-load-balancer-controller`)
+and reuse what's there. Otherwise proceed normally. Pass `--context $CLUSTER` /
+`--kube-context $CLUSTER` on the later kubectl/helm commands.
+
 ## Step 1 — EKS cluster (eksctl)
 
 `cluster.yaml` — `iam.withOIDC: true` is what makes IRSA possible:
