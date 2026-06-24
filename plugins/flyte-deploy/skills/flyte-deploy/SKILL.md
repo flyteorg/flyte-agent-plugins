@@ -20,6 +20,74 @@ https://flyte.org (Deployment → Flyte deployment). Validated end-to-end on EKS
 
 > Replace every placeholder in angle brackets and the example hostnames/IDs with your own.
 
+## Fast path — redeploy onto existing infra (demo, < 1 min)
+
+When the cluster, RDS, S3, IRSA, ALB controller, cert, DNS, and Okta app **already exist**
+(a repeat deploy or a demo on a cluster you stood up earlier), the whole deploy is **one
+`helm install` + one rollout wait**. SKIP Steps 0–4 entirely, and skip the slow extras that
+add minutes for zero benefit on known-good infra:
+
+> **ALWAYS confirm the deploy parameters with the user FIRST — every time, including on the
+> fast path.** "Fast" means skipping infra *provisioning* and machine *probing*, NEVER skipping
+> the user confirmation. Before any `helm install`, ask (via the question table in Step 0.5):
+> reuse-which-cluster, exposure (HTTP / TLS / TLS+SSO), hostname, cert, OIDC issuer/client, and
+> which S3/RDS. Surface prior values (from the saved `values-eks.yaml` / live infra) as
+> *suggestions to confirm*, not silent defaults — then restate the final set before installing.
+> Do not infer "they obviously want the same as last time" and skip the question.
+
+- **No discovery legwork — but always confirm.** Don't re-list clusters/zones/certs or re-read
+  old values files to *rediscover* what to use; reuse the `values-eks.yaml` you saved and a
+  sourced `aws.env`. You still ASK the user to confirm those values first (above) — skipping the
+  machine probing is the speedup, skipping the confirmation is the bug.
+- **No `--dry-run`, no ephemeral `postgres` DB-auth pod.** Those validate first-time infra; on
+  a redeploy they just cost an image pull + round-trips.
+- **CRD must exist BEFORE the binary boots.** `helm install` recreates the TaskAction CRD (a
+  chart template) alongside the Deployment. The current `flyte-binary-v2` **hard-fails at
+  startup if the CRD isn't discoverable** — `Error: setup failed: ... no matches for kind
+  "TaskAction"`, exit 1, CrashLoopBackOff — it does NOT soft-retry the watch (that's a change
+  from older builds; gotcha 8). So there's a boot race: if the pod starts before the CRD is
+  Established, it crashloops, then self-heals after a restart or two once discovery catches up
+  (~30–60s). `--wait` rides this out. If it's still crashlooping, re-apply the CRD and
+  `kubectl delete pod` the binary (or `rollout restart`). On a **shared cluster the CRD gets
+  deleted out from under you** (every `helm uninstall` deletes it — manifest membership — and
+  stray `kubectl delete crd`s happen); always re-confirm it after install (gotcha 8).
+- **Cached, pinned image.** Keep `pullPolicy: IfNotPresent` and a **fixed tag** so the layer
+  already on the node is reused. Floating `nightly` + `pullPolicy: Always` re-pulls on every
+  rollout (~30–60s) — great for tracking latest, wrong for a timed demo. Pre-pull once before
+  the demo if you must use a fresh tag.
+
+```bash
+source aws.env                              # creds + AWS_DEFAULT_REGION, sourced once
+CTX=flyte-v2; CHART=~/git/flyte/charts/flyte-binary; HOST=<your-host>
+
+# --wait blocks until pods are actually Ready. Do NOT use a bare `helm install` followed by
+# `kubectl rollout status` — run right after install, rollout status RACES (it reads the
+# not-yet-updated Deployment status and falsely prints "successfully rolled out" in ~1s, so
+# any timing you take is garbage). --wait is the honest signal and the accurate stopwatch.
+# Also DON'T swallow install errors (no `2>/dev/null`): if the release already exists, install
+# fails and you'd otherwise mistake a stale Ready deployment for a fresh deploy.
+helm install flyte $CHART --kube-context $CTX -n flyte --create-namespace -f values-eks.yaml \
+  --wait --timeout 3m     # returns only when Ready; ~30-45s with a cached image
+
+# CRD safety net — only intervenes (and only then restarts) if it's genuinely gone:
+kubectl --context $CTX get crd taskactions.flyte.org >/dev/null 2>&1 || {
+  kubectl --context $CTX apply -f $CHART/templates/crds/flyte.org_taskactions.yaml
+  kubectl --context $CTX -n flyte rollout restart deploy/flyte
+  kubectl --context $CTX -n flyte rollout status deploy/flyte --timeout=120s; }
+
+curl -s -o /dev/null -w '%{http_code}\n' https://$HOST/v2   # => 302 (SSO) ; done
+```
+
+Keep the **anchor ingress** (see "Stable ALB across redeploys") so the ALB DNS name never
+changes — then a demo is purely `helm uninstall` ↔ `helm install` with no DNS re-point and no
+Okta redirect-URI change. The uninstall→install cycle re-creates the CRD on its own (present
+before the pod is Ready → no restart); only a CRD deleted *while the binary runs* needs the
+safety-net restart. To make the CRD survive `helm uninstall` on a shared cluster, manage it
+out-of-band — see gotcha 8 (stripping ownership labels alone does NOT stop uninstall).
+
+The rest of this skill is the **from-scratch** path (provision everything). Use it only when the
+infra above doesn't already exist.
+
 ## Prerequisites & decisions
 
 - CLIs: `aws` v2, **`eksctl` ≥ 0.227** (older caps out at k8s 1.29 — see gotcha), `kubectl`, `helm`, `jq`.
@@ -40,6 +108,61 @@ ACCT=$(aws sts get-caller-identity --query Account --output text)   # confirm th
 aws route53 list-hosted-zones --query 'HostedZones[].Name' --output text
 aws acm list-certificates --region $REGION --query 'CertificateSummaryList[].DomainName' --output text
 ```
+
+## Step 0 — Reuse an existing cluster?
+
+Before creating anything, list the EKS clusters already in the account/region and **ask the
+user whether to deploy onto one of them or stand up a fresh cluster**. Reusing skips Step 1
+(~15-20 min + the EKS control-plane + node cost).
+
+```bash
+aws eks list-clusters --region $REGION --query 'clusters' --output text
+```
+
+Present the list and let the user pick one (or choose "create new"). If they reuse one:
+
+```bash
+CLUSTER=<chosen-cluster>
+aws eks update-kubeconfig --region $REGION --name $CLUSTER --alias $CLUSTER   # writes + selects context
+kubectl --context $CLUSTER get nodes                                          # confirm reachable + Ready
+# Confirm IRSA is possible (the chart needs an OIDC provider on the cluster):
+aws eks describe-cluster --region $REGION --name $CLUSTER \
+  --query 'cluster.identity.oidc.issuer' --output text                        # empty => run: eksctl utils associate-iam-oidc-provider --cluster $CLUSTER --approve
+```
+
+Then **skip Step 1** and continue from Step 2. S3 (Step 2), RDS (Step 3), and the ALB
+controller (Step 4) may already exist on a reused cluster — check before recreating
+(`aws s3 ls`, `aws rds describe-db-instances`, `kubectl --context $CLUSTER -n kube-system get deploy aws-load-balancer-controller`)
+and reuse what's there. Otherwise proceed normally. Pass `--context $CLUSTER` /
+`--kube-context $CLUSTER` on the later kubectl/helm commands.
+
+## Step 0.5 — Confirm deployment parameters (ASK up front, never assume)
+
+**Before provisioning or installing anything, gather the deploy parameters by ASKING the
+user — do NOT silently reuse values you happen to find.** A previous deploy leaves identifiers
+lying around (an old `values-eks.yaml` with `HOST=`/`certificate-arn`/`password`, a live
+`flyte*-console-oidc` k8s Secret, `authMetadata.flyteClient.clientId`, a memory of the last
+run). These are **suggestions to confirm, not defaults.** Silently reusing the prior
+hostname, OIDC client ID/secret, or cert is the #1 way this skill does the wrong thing.
+
+For each parameter below, **discover any prior value, then present it as a choice** — e.g.
+"reuse previous (`test.uniondemo.run`, loaded from the old values file / the in-cluster
+Secret), enter a new one, or pick a different existing one" — and let the user decide. Restate
+the final set back to them before `helm install`.
+
+| Parameter | Where a prior value hides | Notes |
+|---|---|---|
+| Region / name prefix / cluster | Step 0, current kube-context | |
+| Exposure (HTTP-only / TLS / TLS+SSO) | — | drives which params below apply |
+| Hostname | `HOST=` in old `values-eks.yaml`; existing Route53 record | drives cert, OIDC redirect URI, DNS |
+| ACM cert ARN | old values `certificate-arn`; `aws acm list-certificates` | must match the chosen hostname |
+| OIDC issuer / client ID / **client secret** | `authMetadata` in old values; `flyte*-console-oidc` Secret; the IdP app | **never echo/ask for the secret in chat** — have the user create the Secret themselves (see ALB edge SSO) |
+| OIDC CLI/PKCE client ID | `authMetadata.flyteClient.clientId` | |
+| S3 bucket / RDS host+password | Step 2/3 outputs; old values | reuse the live infra's real values |
+
+Only after the user confirms each value do you write `values-eks.yaml` (Step 5). If reusing a
+secret/credential, confirm the user still wants *that* IdP app — switching IdP is just a new
+Secret + issuer refs (no ALB/DNS churn).
 
 ## Step 1 — EKS cluster (eksctl)
 
@@ -204,6 +327,23 @@ helm install flyte ./charts/flyte-binary -n flyte --create-namespace -f values-e
 kubectl -n flyte get pods   # flyte stuck Init:0/1 => wait-for-db can't reach RDS (see gotchas)
 ```
 
+**ALWAYS confirm the TaskAction CRD is present after install** — the chart ships it as a
+plain template, so in a shared cluster it's easily deleted out-of-band, and the binary then
+loops `Failed to watch ... taskactions.flyte.org` and every run sticks at "queued" (gotcha 8).
+Make it idempotent at the end of every deploy:
+```bash
+kubectl --context <ctx> get crd taskactions.flyte.org >/dev/null 2>&1 \
+  || kubectl --context <ctx> apply -f ./charts/flyte-binary/templates/crds/flyte.org_taskactions.yaml
+kubectl --context <ctx> get crd taskactions.flyte.org -o jsonpath='{.status.conditions[?(@.type=="Established")].status}'  # => True
+# Pre-existing CRD blocks helm adopt? patch ownership, then (re)install:
+#   kubectl annotate crd taskactions.flyte.org meta.helm.sh/release-name=flyte meta.helm.sh/release-namespace=flyte --overwrite
+#   kubectl label    crd taskactions.flyte.org app.kubernetes.io/managed-by=Helm --overwrite
+```
+Only `rollout restart` if you applied the CRD onto an **already-running** binary that was
+missing it (the watch won't retry a resource that 404'd at boot). On a normal install the chart
+creates the CRD before the pod is Ready, so the watch establishes on first boot — don't restart
+reflexively, it's a wasted second rollout (+ image re-pull on a floating tag). See the Fast path.
+
 **Image selection.** The chart defaults to `cr.flyte.org/flyteorg/flyte-binary-v2:latest`
 (+ `ghcr.io/unionai-oss/flyteconsole-v2:latest`). To track the **nightly** build or pin a
 version, override in values:
@@ -219,6 +359,9 @@ console:
 ```
 With a floating tag, `kubectl rollout restart deploy/flyte -n flyte` forces a fresh pull
 (the wait-for-db init container uses a fixed `postgres` tag — leave it `IfNotPresent`).
+**For a timed demo, pin a fixed tag/digest and set `pullPolicy: IfNotPresent`** so the layer
+already on the node is reused (a floating `nightly`/`latest` + `Always` re-pulls ~30–60s on
+every rollout). Pre-pull a fresh tag once before the demo if you can't pin.
 
 ## Step 6 — Verify
 
@@ -264,6 +407,13 @@ Call-outs to make when showing it:
   needs `ce:GetCostAndUsage`).
 
 ## TLS (ACM + ALB), including cross-account DNS
+
+**ASK the user which hostname to use** before requesting the cert or setting `ingress.host` —
+do NOT default to `flyte.example.com`, and do NOT silently reuse a value left over from a
+prior deploy (e.g. a `HOST=` in an old `values-eks.yaml`). The hostname drives the ACM cert,
+the OIDC redirect URI, and the DNS record, so it must be the user's choice. If you find a
+leftover value, surface it as a *suggestion* to confirm, not a default. Then set `HOST` below
+to their answer.
 
 The **cert and ALB must be in the Flyte account + the ALB's region**; the **DNS zone can
 live in another account** — you just add two records there. No domain transfer/delegation.
@@ -378,10 +528,90 @@ they're silently ignored and `GetOAuth2Metadata` returns `unimplemented`. (b) co
 changes may not roll the pod — `kubectl rollout restart deploy/flyte` to be sure. (c) the
 `conditions.*` key must match the rendered backend service name (`<fullname>-http`).
 
+## Stable ALB across redeploys (anchor ingress)
+
+By default the ALB is owned by Flyte's ingresses, so `helm uninstall` deletes it and the next
+install mints a **new ALB with a new DNS name** — forcing a DNS re-point every cycle. To keep
+one stable endpoint, exploit the controller's rule that it keeps exactly **one ALB per
+`group.name` as long as ≥1 ingress in that group exists**: add a permanent "anchor" ingress in
+the group, applied **out-of-band (NOT in the helm release)**, so the ALB survives uninstall.
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flyte-alb-anchor
+  namespace: flyte
+  annotations:
+    alb.ingress.kubernetes.io/group.name: flyte            # SAME group as the flyte ingresses
+    alb.ingress.kubernetes.io/group.order: "100"           # lowest precedence; never shadows flyte rules
+    alb.ingress.kubernetes.io/scheme: internet-facing      # group-level annotations MUST match the
+    alb.ingress.kubernetes.io/target-type: ip              # flyte ingress group, else the controller
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'   # errors on conflicting config
+    alb.ingress.kubernetes.io/certificate-arn: <CERT_ARN>
+    # fixed-response backend => the anchor needs NO real service, so it stands alone when flyte is uninstalled:
+    alb.ingress.kubernetes.io/actions.anchor-ok: '{"type":"fixed-response","fixedResponseConfig":{"contentType":"text/plain","statusCode":"200","messageBody":"flyte-alb-anchor"}}'
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - { path: /__alb_anchor, pathType: ImplementationSpecific, backend: { service: { name: anchor-ok, port: { name: use-annotation } } } }
+```
+
+```bash
+kubectl --context <ctx> apply -f alb-anchor.yaml          # provisions the ALB once
+# point DNS at THIS ALB's name one time; it never changes again:
+kubectl --context <ctx> -n flyte get ingress flyte-alb-anchor -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+```
+
+Now `helm uninstall flyte` removes Flyte's rules but the anchor keeps the ALB (same DNS name)
+alive; `helm install` re-adds Flyte's listener rules (including the `authenticate-oidc` SSO
+rule) onto the surviving ALB. Verify the anchor still answers between deploys:
+`curl http://<alb>/__alb_anchor` → `200 flyte-alb-anchor`. (To intentionally delete the ALB,
+remove the anchor too.) Keeps the annotation-driven SSO config — the alternative, a fully
+pre-provisioned BYO ALB via the controller's `TargetGroupBinding` CRD + `ingress.create:
+false`, is more stable still but makes you hand-manage every listener/SSO rule yourself.
+
+## Pruning run data from the DB
+
+To wipe run history without reinstalling, prune the DB directly. The v2 run data lives in
+just two tables (Postgres `flyte` DB): **`actions`** (one row per run/action) and
+**`action_events`** (per-attempt events). They're linked by `(project, domain, run_name,
+name)` — there's no FK, so delete events first, then actions. **Keep** `projects` (seeded
+`flytesnacks`), `schema_migrations` (migration state), and `task_specs` (registered tasks).
+
+RDS is private (no public access), so run psql from an **ephemeral in-cluster pod** rather
+than your laptop. Prune only **finished** runs by keying on `ended_at IS NOT NULL` — that
+skips anything still in-flight (an open run has `ended_at` null):
+
+```bash
+DBHOST=<rds-endpoint>; DBPW=<db-password>   # from your values-eks.yaml
+kubectl --context <ctx> run pgcli --rm -i --restart=Never -n flyte \
+  --image=postgres:16 --env PGPASSWORD="$DBPW" --command -- \
+  psql "host=$DBHOST user=flyte dbname=flyte sslmode=require" -P pager=off -v ON_ERROR_STOP=1 \
+  -c "begin;
+      delete from action_events ae using actions a
+        where ae.project=a.project and ae.domain=a.domain
+          and ae.run_name=a.run_name and ae.name=a.name and a.ended_at is not null;
+      delete from actions where ended_at is not null;
+      commit;"
+```
+
+Inspect first with `select relname,n_live_tup from pg_stat_user_tables order by 2 desc;`.
+Note a run **stuck "queued"** (e.g. from the missing-CRD gotcha 8) has `ended_at` null, so
+this leaves it untouched — delete those explicitly by `run_name` once you've confirmed no
+task pod / TaskAction CR backs them. To wipe **everything** instead, `truncate actions,
+action_events;` (projects/migrations survive). To reset the whole DB, see Teardown +
+reinstall, or `drop database flyte; create database flyte;` and rollout-restart the binary.
+
 ## Teardown
 
 ```bash
 helm uninstall flyte -n flyte          # deletes the ingress => controller removes the ALB
+# helm uninstall leaves the run/task pods behind (the controller created them, not Helm) —
+# delete them explicitly so the namespace is clean for a redeploy:
+kubectl --context <ctx> -n flyte delete pods --all
 helm uninstall aws-load-balancer-controller -n kube-system
 aws rds delete-db-instance --region $REGION --db-instance-identifier $PREFIX-db --skip-final-snapshot --delete-automated-backups
 aws rds delete-db-subnet-group --region $REGION --db-subnet-group-name $PREFIX-db-subnets
@@ -435,12 +665,38 @@ aws iam delete-policy --policy-arn arn:aws:iam::$ACCT:policy/AWSLoadBalancerCont
    Verify a task pod: `kubectl -n flyte get pod <run>-a0-0 -o jsonpath='{..env[*].name}'` shows
    `_U_EP_OVERRIDE`, and its logs no longer mention `host.docker.internal` or `InvalidContentType`.
 8. **Runs stuck "queued" — missing TaskAction CRD.** The chart ships `taskactions.flyte.org`
-   under `templates/crds/`, so `helm uninstall` DELETES it (and all TaskAction CRs), and a later
-   `helm install` doesn't reliably re-establish it. Symptom: runs sit at "queued", no task pods,
-   binary logs `Failed to watch ... could not find the requested resource (get
-   taskactions.flyte.org)`. Fix:
+   under `templates/crds/` (NOT Helm's delete-protected `crds/` dir), so it's an ordinary,
+   release-owned template. Two consequences bite:
+   - `helm uninstall` DELETES it (and all TaskAction CRs); a later `helm install` doesn't
+     reliably re-establish it, and Helm won't recreate it while the release sits at
+     `deployed` even though `helm get manifest` still lists it.
+   - It's **cluster-scoped but owned by a namespaced release** — so in a **shared cluster**,
+     uninstalling *any* Flyte release (or a stray `kubectl delete crd`) wipes it for
+     everyone, and it can vanish *after* a successful install with the binary still running.
+   Symptom, two variants by binary version: older builds keep *running* and log `Failed to
+   watch ... could not find the requested resource (get taskactions.flyte.org)` every few
+   seconds (runs sit at "queued"); the **current `flyte-binary-v2` hard-fails at startup** —
+   `Error: setup failed: actions: failed to start TaskAction watcher: ... no matches for kind
+   "TaskAction" in version "flyte.org/v1"`, exit 1 → **CrashLoopBackOff** (the console still
+   serves and the ALB still 302s, so check the *binary* pod, not just the URL). Same root cause,
+   same fix:
    ```bash
    kubectl --context <ctx> apply -f charts/flyte-binary/templates/crds/flyte.org_taskactions.yaml
-   kubectl --context <ctx> -n flyte rollout restart deploy/flyte
+   kubectl --context <ctx> -n flyte rollout restart deploy/flyte   # re-establish the watch
    ```
-   For repeat install/uninstall cycles, apply the CRD out-of-band (it then survives uninstall).
+   A normal `helm uninstall` → `helm install` cycle mostly self-heals: uninstall deletes the CRD,
+   install recreates it as a template. **But CRD registration and the pod start race.** If the
+   CRD wins, the binary boots clean on the first try (verified once: rollout Ready ~41s, single
+   rollout). If the pod wins, the current binary **crashloops** until the CRD is discoverable,
+   then comes up after a restart or two (~30–60s; `--wait` rides it out) — also verified in the
+   same cluster minutes later, so treat the crashloop as expected, not a failure. Either way
+   **verify the binary pod is `1/1 Running` and the CRD is `Established` after every deploy**
+   (see Step 5) — a green `helm install` and a `302` from the URL do NOT prove the binary is up
+   (the ALB 302s and the console serves even while the binary crashloops).
+   **Truly protecting it from `helm uninstall` requires removing it from the release manifest**
+   — stripping the live CRD's Helm ownership *labels* does NOT work, because uninstall deletes
+   by manifest membership, not by label (observed: labels stripped, uninstall still deleted it).
+   The ownership strip only avoids the *install-time* adopt conflict (Step 5). To survive
+   uninstall, manage the CRD entirely out-of-band: delete it from the chart's `templates/crds/`
+   (so no release ever lists it) and `kubectl apply` it yourself once. Otherwise just rely on the
+   self-healing install above — simpler, and fine for demos/redeploys.
