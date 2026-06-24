@@ -231,6 +231,20 @@ helm install flyte ./charts/flyte-binary -n flyte --create-namespace -f values-e
 kubectl -n flyte get pods   # flyte stuck Init:0/1 => wait-for-db can't reach RDS (see gotchas)
 ```
 
+**ALWAYS confirm the TaskAction CRD is present after install** — the chart ships it as a
+plain template, so in a shared cluster it's easily deleted out-of-band, and the binary then
+loops `Failed to watch ... taskactions.flyte.org` and every run sticks at "queued" (gotcha 8).
+Make it idempotent at the end of every deploy:
+```bash
+kubectl --context <ctx> get crd taskactions.flyte.org >/dev/null 2>&1 \
+  || kubectl --context <ctx> apply -f ./charts/flyte-binary/templates/crds/flyte.org_taskactions.yaml
+kubectl --context <ctx> get crd taskactions.flyte.org -o jsonpath='{.status.conditions[?(@.type=="Established")].status}'  # => True
+# Pre-existing CRD blocks helm adopt? patch ownership, then (re)install:
+#   kubectl annotate crd taskactions.flyte.org meta.helm.sh/release-name=flyte meta.helm.sh/release-namespace=flyte --overwrite
+#   kubectl label    crd taskactions.flyte.org app.kubernetes.io/managed-by=Helm --overwrite
+```
+If you just applied the CRD onto an already-running binary, `kubectl -n flyte rollout restart deploy/flyte` so it re-establishes the watch.
+
 **Image selection.** The chart defaults to `cr.flyte.org/flyteorg/flyte-binary-v2:latest`
 (+ `ghcr.io/unionai-oss/flyteconsole-v2:latest`). To track the **nightly** build or pin a
 version, override in values:
@@ -462,12 +476,23 @@ aws iam delete-policy --policy-arn arn:aws:iam::$ACCT:policy/AWSLoadBalancerCont
    Verify a task pod: `kubectl -n flyte get pod <run>-a0-0 -o jsonpath='{..env[*].name}'` shows
    `_U_EP_OVERRIDE`, and its logs no longer mention `host.docker.internal` or `InvalidContentType`.
 8. **Runs stuck "queued" — missing TaskAction CRD.** The chart ships `taskactions.flyte.org`
-   under `templates/crds/`, so `helm uninstall` DELETES it (and all TaskAction CRs), and a later
-   `helm install` doesn't reliably re-establish it. Symptom: runs sit at "queued", no task pods,
-   binary logs `Failed to watch ... could not find the requested resource (get
-   taskactions.flyte.org)`. Fix:
+   under `templates/crds/` (NOT Helm's delete-protected `crds/` dir), so it's an ordinary,
+   release-owned template. Two consequences bite:
+   - `helm uninstall` DELETES it (and all TaskAction CRs); a later `helm install` doesn't
+     reliably re-establish it, and Helm won't recreate it while the release sits at
+     `deployed` even though `helm get manifest` still lists it.
+   - It's **cluster-scoped but owned by a namespaced release** — so in a **shared cluster**,
+     uninstalling *any* Flyte release (or a stray `kubectl delete crd`) wipes it for
+     everyone, and it can vanish *after* a successful install with the binary still running.
+   Symptom: runs sit at "queued", no task pods, binary logs `Failed to watch ... could not
+   find the requested resource (get taskactions.flyte.org)` every few seconds. Fix:
    ```bash
    kubectl --context <ctx> apply -f charts/flyte-binary/templates/crds/flyte.org_taskactions.yaml
-   kubectl --context <ctx> -n flyte rollout restart deploy/flyte
+   kubectl --context <ctx> -n flyte rollout restart deploy/flyte   # re-establish the watch
    ```
-   For repeat install/uninstall cycles, apply the CRD out-of-band (it then survives uninstall).
+   **Verify it after every deploy** (see Step 5) — don't assume a green `helm install` left it
+   there. For shared clusters / repeat install-uninstall cycles, decouple it from the release so
+   uninstall can't delete it: apply it out-of-band and strip the Helm ownership metadata
+   (`kubectl annotate crd taskactions.flyte.org meta.helm.sh/release-name- meta.helm.sh/release-namespace-`
+   and `kubectl label crd taskactions.flyte.org app.kubernetes.io/managed-by-`). Trade-off: the
+   next `helm install` then needs the ownership re-patched before it can adopt it (Step 5).
