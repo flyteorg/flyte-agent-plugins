@@ -432,3 +432,13 @@ aws iam delete-policy --policy-arn arn:aws:iam::$ACCT:policy/AWSLoadBalancerCont
    ```
    Verify a task pod: `kubectl -n flyte get pod <run>-a0-0 -o jsonpath='{..env[*].name}'` shows
    `_U_EP_OVERRIDE`, and its logs no longer mention `host.docker.internal` or `InvalidContentType`.
+8. **Runs stuck "queued" — missing TaskAction CRD.** The chart ships `taskactions.flyte.org`
+   under `templates/crds/`, so `helm uninstall` DELETES it (and all TaskAction CRs), and a later
+   `helm install` doesn't reliably re-establish it. Symptom: runs sit at "queued", no task pods,
+   binary logs `Failed to watch ... could not find the requested resource (get
+   taskactions.flyte.org)`. Fix:
+   ```bash
+   kubectl --context <ctx> apply -f charts/flyte-binary/templates/crds/flyte.org_taskactions.yaml
+   kubectl --context <ctx> -n flyte rollout restart deploy/flyte
+   ```
+   For repeat install/uninstall cycles, apply the CRD out-of-band (it then survives uninstall).
