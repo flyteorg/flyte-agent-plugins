@@ -1,6 +1,6 @@
 ---
 name: flyte-deploy
-description: Use when deploying a Flyte v2 (flyte-binary / flyte2) cluster on AWS from scratch — provisions EKS + S3 + RDS PostgreSQL + AWS Load Balancer Controller, then helm-installs the flyte-binary chart behind an ALB, with optional TLS and Okta SSO. Trigger words: "deploy flyte", "flyte v2 on AWS", "flyte EKS".
+description: 'Use when deploying a Flyte v2 (flyte-binary / flyte2) cluster on AWS from scratch — provisions EKS + S3 + RDS PostgreSQL + AWS Load Balancer Controller, then helm-installs the flyte-binary chart behind an ALB, with optional TLS and Okta SSO. Trigger words: "deploy flyte", "flyte v2 on AWS", "flyte EKS".'
 ---
 
 # Deploying Flyte v2 on AWS (EKS + RDS + S3 + ALB)
