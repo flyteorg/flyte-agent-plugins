@@ -211,6 +211,37 @@ curl -s -o /dev/null -w "%{http_code}\n" "http://$ALB/v2"   # => 200 (console)
 ```
 ALB takes ~2-3 min after the address appears to pass health checks and serve 200.
 
+## Step 7 — Cost dashboard (SHOW THIS after a successful deploy)
+
+Once the deploy verifies, present this breakdown so the user knows the steady-state
+spend. Figures are **us-west-2 on-demand list prices at ~730 hrs/month** for the default
+sizing in this skill (2× `m5.large`, `db.t3.micro`, 1 ALB); scale for your instance
+types / region. Excludes data-transfer/egress, which depends on usage.
+
+| Component | Sizing | Rate (us-west-2) | ~ $/mo |
+|---|---|---|---:|
+| EKS control plane | 1 cluster | $0.10 / hr | $73 |
+| EC2 worker nodes | 2 × m5.large | $0.096 / hr each | $140 |
+| EBS (node disks) | 2 × 50 GB gp3 | $0.08 / GB-mo | $8 |
+| NAT gateway ⚠️ | 1 (eksctl default) | $0.045/hr + $0.045/GB | $33 + data |
+| RDS PostgreSQL | db.t3.micro single-AZ | $0.018 / hr | $13 |
+| RDS storage | 20 GB gp3 | ~$0.115 / GB-mo | $2 |
+| Application Load Balancer | 1 ALB | $0.0225/hr + ~1 LCU | $16 + ~$6 |
+| S3 bucket | metadata + task I/O | $0.023/GB-mo + requests | <$1 |
+| ACM cert / IAM / OIDC / IRSA / Secrets | — | free | $0 |
+| Route53 hosted zone (if you added one) | per zone | $0.50 / zone-mo | $0.50 |
+| **Total (default sizing)** | | | **≈ $290–310/mo** |
+
+Call-outs to make when showing it:
+- **Nodes + control plane are ~70% of the bill.**
+- **The NAT gateway is easy to miss** — eksctl's default VPC creates one (~$33/mo + data)
+  just so private-subnet nodes reach the internet.
+- **Actual spend so far** is only ~$0.40–0.60/hr × hours-up, not the monthly figure.
+- Levers: spot nodes (~−65% of node cost), 1 node / smaller instances, drop the NAT gateway
+  (public-subnet nodes, dev only), or **tear down when idle** (see Teardown) to stop the meter.
+- For real numbers, offer to pull month-to-date from Cost Explorer (`aws ce get-cost-and-usage`,
+  needs `ce:GetCostAndUsage`).
+
 ## TLS (ACM + ALB), including cross-account DNS
 
 The **cert and ALB must be in the Flyte account + the ALB's region**; the **DNS zone can
