@@ -68,6 +68,34 @@ controller (Step 4) may already exist on a reused cluster — check before recre
 and reuse what's there. Otherwise proceed normally. Pass `--context $CLUSTER` /
 `--kube-context $CLUSTER` on the later kubectl/helm commands.
 
+## Step 0.5 — Confirm deployment parameters (ASK up front, never assume)
+
+**Before provisioning or installing anything, gather the deploy parameters by ASKING the
+user — do NOT silently reuse values you happen to find.** A previous deploy leaves identifiers
+lying around (an old `values-eks.yaml` with `HOST=`/`certificate-arn`/`password`, a live
+`flyte*-console-oidc` k8s Secret, `authMetadata.flyteClient.clientId`, a memory of the last
+run). These are **suggestions to confirm, not defaults.** Silently reusing the prior
+hostname, OIDC client ID/secret, or cert is the #1 way this skill does the wrong thing.
+
+For each parameter below, **discover any prior value, then present it as a choice** — e.g.
+"reuse previous (`test.uniondemo.run`, loaded from the old values file / the in-cluster
+Secret), enter a new one, or pick a different existing one" — and let the user decide. Restate
+the final set back to them before `helm install`.
+
+| Parameter | Where a prior value hides | Notes |
+|---|---|---|
+| Region / name prefix / cluster | Step 0, current kube-context | |
+| Exposure (HTTP-only / TLS / TLS+SSO) | — | drives which params below apply |
+| Hostname | `HOST=` in old `values-eks.yaml`; existing Route53 record | drives cert, OIDC redirect URI, DNS |
+| ACM cert ARN | old values `certificate-arn`; `aws acm list-certificates` | must match the chosen hostname |
+| OIDC issuer / client ID / **client secret** | `authMetadata` in old values; `flyte*-console-oidc` Secret; the IdP app | **never echo/ask for the secret in chat** — have the user create the Secret themselves (see ALB edge SSO) |
+| OIDC CLI/PKCE client ID | `authMetadata.flyteClient.clientId` | |
+| S3 bucket / RDS host+password | Step 2/3 outputs; old values | reuse the live infra's real values |
+
+Only after the user confirms each value do you write `values-eks.yaml` (Step 5). If reusing a
+secret/credential, confirm the user still wants *that* IdP app — switching IdP is just a new
+Secret + issuer refs (no ALB/DNS churn).
+
 ## Step 1 — EKS cluster (eksctl)
 
 `cluster.yaml` — `iam.withOIDC: true` is what makes IRSA possible:
