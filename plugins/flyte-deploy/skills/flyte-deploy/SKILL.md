@@ -306,6 +306,13 @@ Call-outs to make when showing it:
 
 ## TLS (ACM + ALB), including cross-account DNS
 
+**ASK the user which hostname to use** before requesting the cert or setting `ingress.host` —
+do NOT default to `flyte.example.com`, and do NOT silently reuse a value left over from a
+prior deploy (e.g. a `HOST=` in an old `values-eks.yaml`). The hostname drives the ACM cert,
+the OIDC redirect URI, and the DNS record, so it must be the user's choice. If you find a
+leftover value, surface it as a *suggestion* to confirm, not a default. Then set `HOST` below
+to their answer.
+
 The **cert and ALB must be in the Flyte account + the ALB's region**; the **DNS zone can
 live in another account** — you just add two records there. No domain transfer/delegation.
 TLS is a prerequisite for browser SSO (ALB `authenticate-oidc` only runs on HTTPS listeners;
