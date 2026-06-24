@@ -24,6 +24,9 @@ https://flyte.org (Deployment → Flyte deployment). Validated end-to-end on EKS
 
 - CLIs: `aws` v2, **`eksctl` ≥ 0.227** (older caps out at k8s 1.29 — see gotcha), `kubectl`, `helm`, `jq`.
 - Admin (or EKS+RDS+IAM+S3+EC2) creds. STS/SSO works — export the 3 env vars + region.
+- eksctl writes the kubeconfig context (e.g. `<user>@flyte-v2.<region>.eksctl.io`). Pass
+  `kubectl --context <ctx>` (and `helm --kube-context <ctx>`) per command rather than
+  `kubectl config use-context` — that way you don't mutate the operator's current context.
 - Decide: region, name prefix, **RDS vs in-cluster Postgres**, and **exposure**:
   ALB+TLS needs a Route53 zone + ACM cert; **ALB HTTP-only needs neither** (reached at
   the auto `*.elb.amazonaws.com` name) — the simplest default when you own no domain.
