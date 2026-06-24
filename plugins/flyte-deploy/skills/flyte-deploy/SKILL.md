@@ -201,6 +201,22 @@ helm install flyte ./charts/flyte-binary -n flyte --create-namespace -f values-e
 kubectl -n flyte get pods   # flyte stuck Init:0/1 => wait-for-db can't reach RDS (see gotchas)
 ```
 
+**Image selection.** The chart defaults to `cr.flyte.org/flyteorg/flyte-binary-v2:latest`
+(+ `ghcr.io/unionai-oss/flyteconsole-v2:latest`). To track the **nightly** build or pin a
+version, override in values:
+```yaml
+deployment:
+  image:
+    repository: ghcr.io/flyteorg/flyte-binary-v2
+    tag: nightly          # or a pinned tag/digest
+    pullPolicy: Always    # re-pull floating tags (latest/nightly) on every (re)start
+console:
+  image:
+    pullPolicy: Always
+```
+With a floating tag, `kubectl rollout restart deploy/flyte -n flyte` forces a fresh pull
+(the wait-for-db init container uses a fixed `postgres` tag — leave it `IfNotPresent`).
+
 ## Step 6 — Verify
 
 ```bash
