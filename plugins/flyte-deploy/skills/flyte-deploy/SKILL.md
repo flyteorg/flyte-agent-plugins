@@ -535,6 +535,9 @@ reinstall, or `drop database flyte; create database flyte;` and rollout-restart 
 
 ```bash
 helm uninstall flyte -n flyte          # deletes the ingress => controller removes the ALB
+# helm uninstall leaves the run/task pods behind (the controller created them, not Helm) —
+# delete them explicitly so the namespace is clean for a redeploy:
+kubectl --context <ctx> -n flyte delete pods --all
 helm uninstall aws-load-balancer-controller -n kube-system
 aws rds delete-db-instance --region $REGION --db-instance-identifier $PREFIX-db --skip-final-snapshot --delete-automated-backups
 aws rds delete-db-subnet-group --region $REGION --db-subnet-group-name $PREFIX-db-subnets
