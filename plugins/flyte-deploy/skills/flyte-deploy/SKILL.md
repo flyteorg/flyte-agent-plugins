@@ -27,14 +27,30 @@ When the cluster, RDS, S3, IRSA, ALB controller, cert, DNS, and Okta app **alrea
 `helm install` + one rollout wait**. SKIP Steps 0–4 entirely, and skip the slow extras that
 add minutes for zero benefit on known-good infra:
 
-- **No discovery.** Don't re-list clusters/zones/certs or re-read old values files. Reuse the
-  `values-eks.yaml` you saved last time (it doesn't change between demos) and a sourced `aws.env`.
+> **ALWAYS confirm the deploy parameters with the user FIRST — every time, including on the
+> fast path.** "Fast" means skipping infra *provisioning* and machine *probing*, NEVER skipping
+> the user confirmation. Before any `helm install`, ask (via the question table in Step 0.5):
+> reuse-which-cluster, exposure (HTTP / TLS / TLS+SSO), hostname, cert, OIDC issuer/client, and
+> which S3/RDS. Surface prior values (from the saved `values-eks.yaml` / live infra) as
+> *suggestions to confirm*, not silent defaults — then restate the final set before installing.
+> Do not infer "they obviously want the same as last time" and skip the question.
+
+- **No discovery legwork — but always confirm.** Don't re-list clusters/zones/certs or re-read
+  old values files to *rediscover* what to use; reuse the `values-eks.yaml` you saved and a
+  sourced `aws.env`. You still ASK the user to confirm those values first (above) — skipping the
+  machine probing is the speedup, skipping the confirmation is the bug.
 - **No `--dry-run`, no ephemeral `postgres` DB-auth pod.** Those validate first-time infra; on
   a redeploy they just cost an image pull + round-trips.
-- **One rollout, not two.** `helm install` recreates the TaskAction CRD (it's a chart template),
-  so it's present when the pod starts and the watch establishes on first boot — **no
-  `rollout restart`.** Only restart if the CRD is *actually missing* (shared-cluster deletion,
-  gotcha 8). The restart is a second full rollout + image re-pull (~40s wasted).
+- **CRD must exist BEFORE the binary boots.** `helm install` recreates the TaskAction CRD (a
+  chart template) alongside the Deployment. The current `flyte-binary-v2` **hard-fails at
+  startup if the CRD isn't discoverable** — `Error: setup failed: ... no matches for kind
+  "TaskAction"`, exit 1, CrashLoopBackOff — it does NOT soft-retry the watch (that's a change
+  from older builds; gotcha 8). So there's a boot race: if the pod starts before the CRD is
+  Established, it crashloops, then self-heals after a restart or two once discovery catches up
+  (~30–60s). `--wait` rides this out. If it's still crashlooping, re-apply the CRD and
+  `kubectl delete pod` the binary (or `rollout restart`). On a **shared cluster the CRD gets
+  deleted out from under you** (every `helm uninstall` deletes it — manifest membership — and
+  stray `kubectl delete crd`s happen); always re-confirm it after install (gotcha 8).
 - **Cached, pinned image.** Keep `pullPolicy: IfNotPresent` and a **fixed tag** so the layer
   already on the node is reused. Floating `nightly` + `pullPolicy: Always` re-pulls on every
   rollout (~30–60s) — great for tracking latest, wrong for a timed demo. Pre-pull once before
@@ -44,8 +60,14 @@ add minutes for zero benefit on known-good infra:
 source aws.env                              # creds + AWS_DEFAULT_REGION, sourced once
 CTX=flyte-v2; CHART=~/git/flyte/charts/flyte-binary; HOST=<your-host>
 
-helm install flyte $CHART --kube-context $CTX -n flyte --create-namespace -f values-eks.yaml
-kubectl --context $CTX -n flyte rollout status deploy/flyte --timeout=120s
+# --wait blocks until pods are actually Ready. Do NOT use a bare `helm install` followed by
+# `kubectl rollout status` — run right after install, rollout status RACES (it reads the
+# not-yet-updated Deployment status and falsely prints "successfully rolled out" in ~1s, so
+# any timing you take is garbage). --wait is the honest signal and the accurate stopwatch.
+# Also DON'T swallow install errors (no `2>/dev/null`): if the release already exists, install
+# fails and you'd otherwise mistake a stale Ready deployment for a fresh deploy.
+helm install flyte $CHART --kube-context $CTX -n flyte --create-namespace -f values-eks.yaml \
+  --wait --timeout 3m     # returns only when Ready; ~30-45s with a cached image
 
 # CRD safety net — only intervenes (and only then restarts) if it's genuinely gone:
 kubectl --context $CTX get crd taskactions.flyte.org >/dev/null 2>&1 || {
@@ -651,19 +673,26 @@ aws iam delete-policy --policy-arn arn:aws:iam::$ACCT:policy/AWSLoadBalancerCont
    - It's **cluster-scoped but owned by a namespaced release** — so in a **shared cluster**,
      uninstalling *any* Flyte release (or a stray `kubectl delete crd`) wipes it for
      everyone, and it can vanish *after* a successful install with the binary still running.
-   Symptom: runs sit at "queued", no task pods, binary logs `Failed to watch ... could not
-   find the requested resource (get taskactions.flyte.org)` every few seconds. Fix:
+   Symptom, two variants by binary version: older builds keep *running* and log `Failed to
+   watch ... could not find the requested resource (get taskactions.flyte.org)` every few
+   seconds (runs sit at "queued"); the **current `flyte-binary-v2` hard-fails at startup** —
+   `Error: setup failed: actions: failed to start TaskAction watcher: ... no matches for kind
+   "TaskAction" in version "flyte.org/v1"`, exit 1 → **CrashLoopBackOff** (the console still
+   serves and the ALB still 302s, so check the *binary* pod, not just the URL). Same root cause,
+   same fix:
    ```bash
    kubectl --context <ctx> apply -f charts/flyte-binary/templates/crds/flyte.org_taskactions.yaml
    kubectl --context <ctx> -n flyte rollout restart deploy/flyte   # re-establish the watch
    ```
-   A normal `helm uninstall` → `helm install` cycle is self-healing: uninstall deletes the CRD,
-   install recreates it as a template, and it's Established before the pod is Ready — so the
-   watch attaches on first boot with **no restart** (verified: rollout Ready in ~41s, CRD `True`,
-   single rollout). You only hit the restart path when the CRD is deleted out-of-band *while the
-   binary keeps running* (a shared-cluster `kubectl delete crd`, or another Flyte release's
-   uninstall). **Verify it after every deploy** (see Step 5) — don't assume a green `helm install`
-   left it there.
+   A normal `helm uninstall` → `helm install` cycle mostly self-heals: uninstall deletes the CRD,
+   install recreates it as a template. **But CRD registration and the pod start race.** If the
+   CRD wins, the binary boots clean on the first try (verified once: rollout Ready ~41s, single
+   rollout). If the pod wins, the current binary **crashloops** until the CRD is discoverable,
+   then comes up after a restart or two (~30–60s; `--wait` rides it out) — also verified in the
+   same cluster minutes later, so treat the crashloop as expected, not a failure. Either way
+   **verify the binary pod is `1/1 Running` and the CRD is `Established` after every deploy**
+   (see Step 5) — a green `helm install` and a `302` from the URL do NOT prove the binary is up
+   (the ALB 302s and the console serves even while the binary crashloops).
    **Truly protecting it from `helm uninstall` requires removing it from the release manifest**
    — stripping the live CRD's Helm ownership *labels* does NOT work, because uninstall deletes
    by manifest membership, not by label (observed: labels stripped, uninstall still deleted it).
