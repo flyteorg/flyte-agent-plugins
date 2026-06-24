@@ -426,6 +426,38 @@ they're silently ignored and `GetOAuth2Metadata` returns `unimplemented`. (b) co
 changes may not roll the pod — `kubectl rollout restart deploy/flyte` to be sure. (c) the
 `conditions.*` key must match the rendered backend service name (`<fullname>-http`).
 
+## Pruning run data from the DB
+
+To wipe run history without reinstalling, prune the DB directly. The v2 run data lives in
+just two tables (Postgres `flyte` DB): **`actions`** (one row per run/action) and
+**`action_events`** (per-attempt events). They're linked by `(project, domain, run_name,
+name)` — there's no FK, so delete events first, then actions. **Keep** `projects` (seeded
+`flytesnacks`), `schema_migrations` (migration state), and `task_specs` (registered tasks).
+
+RDS is private (no public access), so run psql from an **ephemeral in-cluster pod** rather
+than your laptop. Prune only **finished** runs by keying on `ended_at IS NOT NULL` — that
+skips anything still in-flight (an open run has `ended_at` null):
+
+```bash
+DBHOST=<rds-endpoint>; DBPW=<db-password>   # from your values-eks.yaml
+kubectl --context <ctx> run pgcli --rm -i --restart=Never -n flyte \
+  --image=postgres:16 --env PGPASSWORD="$DBPW" --command -- \
+  psql "host=$DBHOST user=flyte dbname=flyte sslmode=require" -P pager=off -v ON_ERROR_STOP=1 \
+  -c "begin;
+      delete from action_events ae using actions a
+        where ae.project=a.project and ae.domain=a.domain
+          and ae.run_name=a.run_name and ae.name=a.name and a.ended_at is not null;
+      delete from actions where ended_at is not null;
+      commit;"
+```
+
+Inspect first with `select relname,n_live_tup from pg_stat_user_tables order by 2 desc;`.
+Note a run **stuck "queued"** (e.g. from the missing-CRD gotcha 8) has `ended_at` null, so
+this leaves it untouched — delete those explicitly by `run_name` once you've confirmed no
+task pod / TaskAction CR backs them. To wipe **everything** instead, `truncate actions,
+action_events;` (projects/migrations survive). To reset the whole DB, see Teardown +
+reinstall, or `drop database flyte; create database flyte;` and rollout-restart the binary.
+
 ## Teardown
 
 ```bash
