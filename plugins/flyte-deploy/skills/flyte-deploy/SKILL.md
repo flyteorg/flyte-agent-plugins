@@ -20,6 +20,52 @@ https://flyte.org (Deployment → Flyte deployment). Validated end-to-end on EKS
 
 > Replace every placeholder in angle brackets and the example hostnames/IDs with your own.
 
+## Fast path — redeploy onto existing infra (demo, < 1 min)
+
+When the cluster, RDS, S3, IRSA, ALB controller, cert, DNS, and Okta app **already exist**
+(a repeat deploy or a demo on a cluster you stood up earlier), the whole deploy is **one
+`helm install` + one rollout wait**. SKIP Steps 0–4 entirely, and skip the slow extras that
+add minutes for zero benefit on known-good infra:
+
+- **No discovery.** Don't re-list clusters/zones/certs or re-read old values files. Reuse the
+  `values-eks.yaml` you saved last time (it doesn't change between demos) and a sourced `aws.env`.
+- **No `--dry-run`, no ephemeral `postgres` DB-auth pod.** Those validate first-time infra; on
+  a redeploy they just cost an image pull + round-trips.
+- **One rollout, not two.** `helm install` recreates the TaskAction CRD (it's a chart template),
+  so it's present when the pod starts and the watch establishes on first boot — **no
+  `rollout restart`.** Only restart if the CRD is *actually missing* (shared-cluster deletion,
+  gotcha 8). The restart is a second full rollout + image re-pull (~40s wasted).
+- **Cached, pinned image.** Keep `pullPolicy: IfNotPresent` and a **fixed tag** so the layer
+  already on the node is reused. Floating `nightly` + `pullPolicy: Always` re-pulls on every
+  rollout (~30–60s) — great for tracking latest, wrong for a timed demo. Pre-pull once before
+  the demo if you must use a fresh tag.
+
+```bash
+source aws.env                              # creds + AWS_DEFAULT_REGION, sourced once
+CTX=flyte-v2; CHART=~/git/flyte/charts/flyte-binary; HOST=<your-host>
+
+helm install flyte $CHART --kube-context $CTX -n flyte --create-namespace -f values-eks.yaml
+kubectl --context $CTX -n flyte rollout status deploy/flyte --timeout=120s
+
+# CRD safety net — only intervenes (and only then restarts) if it's genuinely gone:
+kubectl --context $CTX get crd taskactions.flyte.org >/dev/null 2>&1 || {
+  kubectl --context $CTX apply -f $CHART/templates/crds/flyte.org_taskactions.yaml
+  kubectl --context $CTX -n flyte rollout restart deploy/flyte
+  kubectl --context $CTX -n flyte rollout status deploy/flyte --timeout=120s; }
+
+curl -s -o /dev/null -w '%{http_code}\n' https://$HOST/v2   # => 302 (SSO) ; done
+```
+
+Keep the **anchor ingress** (see "Stable ALB across redeploys") so the ALB DNS name never
+changes — then a demo is purely `helm uninstall` ↔ `helm install` with no DNS re-point and no
+Okta redirect-URI change. The uninstall→install cycle re-creates the CRD on its own (present
+before the pod is Ready → no restart); only a CRD deleted *while the binary runs* needs the
+safety-net restart. To make the CRD survive `helm uninstall` on a shared cluster, manage it
+out-of-band — see gotcha 8 (stripping ownership labels alone does NOT stop uninstall).
+
+The rest of this skill is the **from-scratch** path (provision everything). Use it only when the
+infra above doesn't already exist.
+
 ## Prerequisites & decisions
 
 - CLIs: `aws` v2, **`eksctl` ≥ 0.227** (older caps out at k8s 1.29 — see gotcha), `kubectl`, `helm`, `jq`.
@@ -271,7 +317,10 @@ kubectl --context <ctx> get crd taskactions.flyte.org -o jsonpath='{.status.cond
 #   kubectl annotate crd taskactions.flyte.org meta.helm.sh/release-name=flyte meta.helm.sh/release-namespace=flyte --overwrite
 #   kubectl label    crd taskactions.flyte.org app.kubernetes.io/managed-by=Helm --overwrite
 ```
-If you just applied the CRD onto an already-running binary, `kubectl -n flyte rollout restart deploy/flyte` so it re-establishes the watch.
+Only `rollout restart` if you applied the CRD onto an **already-running** binary that was
+missing it (the watch won't retry a resource that 404'd at boot). On a normal install the chart
+creates the CRD before the pod is Ready, so the watch establishes on first boot — don't restart
+reflexively, it's a wasted second rollout (+ image re-pull on a floating tag). See the Fast path.
 
 **Image selection.** The chart defaults to `cr.flyte.org/flyteorg/flyte-binary-v2:latest`
 (+ `ghcr.io/unionai-oss/flyteconsole-v2:latest`). To track the **nightly** build or pin a
@@ -288,6 +337,9 @@ console:
 ```
 With a floating tag, `kubectl rollout restart deploy/flyte -n flyte` forces a fresh pull
 (the wait-for-db init container uses a fixed `postgres` tag — leave it `IfNotPresent`).
+**For a timed demo, pin a fixed tag/digest and set `pullPolicy: IfNotPresent`** so the layer
+already on the node is reused (a floating `nightly`/`latest` + `Always` re-pulls ~30–60s on
+every rollout). Pre-pull a fresh tag once before the demo if you can't pin.
 
 ## Step 6 — Verify
 
@@ -605,9 +657,17 @@ aws iam delete-policy --policy-arn arn:aws:iam::$ACCT:policy/AWSLoadBalancerCont
    kubectl --context <ctx> apply -f charts/flyte-binary/templates/crds/flyte.org_taskactions.yaml
    kubectl --context <ctx> -n flyte rollout restart deploy/flyte   # re-establish the watch
    ```
-   **Verify it after every deploy** (see Step 5) — don't assume a green `helm install` left it
-   there. For shared clusters / repeat install-uninstall cycles, decouple it from the release so
-   uninstall can't delete it: apply it out-of-band and strip the Helm ownership metadata
-   (`kubectl annotate crd taskactions.flyte.org meta.helm.sh/release-name- meta.helm.sh/release-namespace-`
-   and `kubectl label crd taskactions.flyte.org app.kubernetes.io/managed-by-`). Trade-off: the
-   next `helm install` then needs the ownership re-patched before it can adopt it (Step 5).
+   A normal `helm uninstall` → `helm install` cycle is self-healing: uninstall deletes the CRD,
+   install recreates it as a template, and it's Established before the pod is Ready — so the
+   watch attaches on first boot with **no restart** (verified: rollout Ready in ~41s, CRD `True`,
+   single rollout). You only hit the restart path when the CRD is deleted out-of-band *while the
+   binary keeps running* (a shared-cluster `kubectl delete crd`, or another Flyte release's
+   uninstall). **Verify it after every deploy** (see Step 5) — don't assume a green `helm install`
+   left it there.
+   **Truly protecting it from `helm uninstall` requires removing it from the release manifest**
+   — stripping the live CRD's Helm ownership *labels* does NOT work, because uninstall deletes
+   by manifest membership, not by label (observed: labels stripped, uninstall still deleted it).
+   The ownership strip only avoids the *install-time* adopt conflict (Step 5). To survive
+   uninstall, manage the CRD entirely out-of-band: delete it from the chart's `templates/crds/`
+   (so no release ever lists it) and `kubectl apply` it yourself once. Otherwise just rely on the
+   self-healing install above — simpler, and fine for demos/redeploys.
