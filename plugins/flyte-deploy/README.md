@@ -17,11 +17,11 @@ It encodes the full runbook plus the non-obvious gotchas that break a first depl
 ```
 
 Then ask Claude to "deploy a Flyte v2 cluster on AWS", or invoke it directly with
-`/flyte-deploy:flyte-deploy`.
+`/flyte-deploy:flyte-deploy-aws`.
 
 ## Install (manual)
 
-Copy `skills/flyte-deploy/` into your `~/.claude/skills/` directory.
+Copy `skills/flyte-deploy-aws/` into your `~/.claude/skills/` directory.
 
 ## Scope & safety
 

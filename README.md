@@ -23,7 +23,7 @@ Example:
 ```
 
 Then ask Claude to "deploy a Flyte v2 cluster on AWS", or invoke it directly with
-`/flyte-deploy:flyte-deploy`.
+`/flyte-deploy:flyte-deploy-aws`.
 
 ## Layout
 
