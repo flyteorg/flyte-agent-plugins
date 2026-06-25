@@ -277,34 +277,26 @@ missing it (the watch won't retry a resource that 404'd at boot). On a normal in
 creates the CRD before the pod is Ready, so the watch establishes on first boot — don't restart
 reflexively, it's a wasted second rollout (+ image re-pull on a floating tag).
 
-**Image selection — default to `nightly`, NOT the chart default.** The chart defaults to
-`cr.flyte.org/flyteorg/flyte-binary-v2:latest` (+ `ghcr.io/unionai-oss/flyteconsole-v2:latest`),
-but `:latest` is a **stable channel that lags the schema migrations** the binary expects. v2 is
-moving fast: a freshly-installed `:latest` binary can run DB migrations whose columns its own
-`models.*` structs don't yet read, and listing runs then fails with
-`missing destination name <col> in *[]*models.Action` (see gotcha 9). **Override to `nightly`
-on every fresh install** so the binary's code and the schema it migrates always match:
+**Image selection.** The chart default `cr.flyte.org/flyteorg/flyte-binary-v2:latest`
+(+ `ghcr.io/unionai-oss/flyteconsole-v2:latest`) is fine for a normal deploy — Flyte CI now
+pushes `:latest` on every merge to `main`, so its code and the DB migrations it runs are always
+in sync. No image override is needed; just set `pullPolicy: Always` so a restart picks up the
+current build:
 ```yaml
 deployment:
   image:
-    repository: ghcr.io/flyteorg/flyte-binary-v2
-    tag: nightly          # default for fresh installs; the schema matches the code
-    pullPolicy: Always    # re-pull the floating tag on every (re)start
+    pullPolicy: Always    # :latest is floating + kept current by CI; re-pull on (re)start
 console:
   image:
     pullPolicy: Always
 ```
-The image and the database schema are a matched pair — **the binary owns its migrations, so a
-given image only works against a DB it (or a same-or-newer image) migrated.** This is why a
-**fresh DB is the safe default**: let `nightly` create the schema from scratch. Reusing a DB
-that an *older or newer* image touched is the #1 cause of the `missing destination name` error
-(gotcha 9). Pin a specific `nightly-YYYYMMDD` tag or a digest only once you've verified that
-exact image lists runs cleanly, so the deploy is reproducible.
-With a floating tag, `kubectl rollout restart deploy/flyte -n flyte` forces a fresh pull
-(the wait-for-db init container uses a fixed `postgres` tag — leave it `IfNotPresent`).
-**For a timed demo, pin a fixed tag/digest and set `pullPolicy: IfNotPresent`** so the layer
-already on the node is reused (a floating `nightly`/`latest` + `Always` re-pulls ~30–60s on
-every rollout). Pre-pull a fresh tag once before the demo if you can't pin.
+With a floating tag, `kubectl rollout restart deploy/flyte -n flyte` forces a fresh pull (the
+wait-for-db init container uses a fixed `postgres` tag — leave it `IfNotPresent`). **For a timed
+demo or a reproducible deploy, pin a digest** (`repository@sha256:…`) + `pullPolicy: IfNotPresent`
+so the layer already on the node is reused and the build can't shift under you. The image and the
+schema are a matched pair (the binary owns its migrations), so if you ever pin/roll *back* to an
+older image against a DB a newer one migrated, you can hit the schema-mismatch error in gotcha 9 —
+a non-issue on a normal `:latest` deploy.
 
 ## Step 6 — Verify
 
@@ -727,35 +719,30 @@ aws iam delete-policy --policy-arn arn:aws:iam::$ACCT:policy/AWSLoadBalancerCont
    install is green, the console loads, but opening a project's runs (or any
    `RunService/ListActions` / `ListRuns` call) returns
    `{"code":"internal","message":"failed to list actions: missing destination name created_by in *[]*models.Action"}`
-   (the column varies — `created_by`, `executed_by`, `created_by_subject`, …). **Root cause: the
-   binary image and the DB schema disagree.** The binary owns its migrations, so the `actions`
-   table has a column its running `models.Action` struct can't scan — i.e. the schema was created
-   by a *different* image than the one running. Two ways in:
-   - **Image lags the schema** (most common with the chart's `:latest`): the stable `:latest` is
-     behind `main`, so it can't read columns a newer migration added. **Fix: use `nightly`**
-     (Step 5 image selection) so code and migrations match.
-   - **Reused DB is ahead of (or on a different branch than) the image**: the DB was migrated by a
-     newer/feature-branch image (e.g. one carrying `executed_by`) that `nightly` doesn't match yet.
-   Diagnose, then fix by making the schema match the image — on a fresh/disposable DB the clean
-   fix is to let the chosen image re-migrate from scratch:
+   (the column varies — `created_by`, `executed_by`, …). **Root cause: the binary image and the DB
+   schema disagree** — the `actions` table has a column the running `models.Action` struct can't
+   scan, i.e. the schema was migrated by a *different* image than the one running. A normal `:latest`
+   deploy on a fresh DB won't hit this (CI keeps `:latest` and its migrations in sync). It shows up
+   when you **reuse a DB that a newer/feature-branch image migrated** and then run an older image
+   against it (e.g. pinned a digest, or rolled back). Diagnose, then make the schema match the image —
+   on a fresh/disposable DB just let the running image re-migrate from scratch:
    ```bash
-   # 1. see which extra columns the DB has vs what the image expects
+   # see the extra columns the DB has, and check there's no run data worth keeping:
    kubectl --context <ctx> -n flyte run pg --rm -i --restart=Never --image=postgres:16 \
      --env PGPASSWORD=<pw> --command -- psql "host=<rds> user=flyte dbname=flyte sslmode=require" -A -t \
-     -c "select column_name from information_schema.columns where table_name='actions' and column_name like '%_by%';"
-   # 2. if there's NO run data worth keeping (check: select count(*) from actions;), reset the schema
-   #    and let the image re-migrate on boot:
+     -c "select column_name from information_schema.columns where table_name='actions' and column_name like '%_by%';" \
+     -c "select count(*) from actions;"
+   # if count is 0 (or disposable), reset the schema and let the image re-migrate on boot:
    kubectl --context <ctx> -n flyte scale deploy/flyte --replicas=0
    kubectl --context <ctx> -n flyte run pg --rm -i --restart=Never --image=postgres:16 \
      --env PGPASSWORD=<pw> --command -- psql "host=<rds> user=flyte dbname=flyte sslmode=require" \
      -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO flyte; GRANT ALL ON SCHEMA public TO public;"
    kubectl --context <ctx> -n flyte scale deploy/flyte --replicas=1   # re-migrates clean
    ```
-   Then confirm in-cluster (bypasses the ALB JWT gate):
+   Confirm in-cluster (bypasses the ALB JWT gate):
    `kubectl -n flyte run c --rm -i --image=curlimages/curl --restart=Never -- curl -s -XPOST
    http://flyte-http.flyte:8090/flyteidl2.workflow.RunService/ListActions -H 'Content-Type: application/json'
    -d '{"project_id":{"domain":"development","name":"flytesnacks"}}'` → `{}` (not the error).
-   **Prevention: a fresh DB + `nightly` is the default that avoids this entirely** — only reuse a DB
-   when you know the image that last migrated it. A green `helm install` and a `302` from `/v2` do
-   NOT prove run-listing works; the binary serves the console and auth-redirects even when this
-   query is broken, so exercise `ListActions` after deploy.
+   A green `helm install` and a `302` from `/v2` do NOT prove run-listing works (the binary serves
+   the console and auth-redirects even when this query is broken), so exercise `ListActions` after a
+   deploy that pins/reuses an image or DB.
