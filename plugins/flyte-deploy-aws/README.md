@@ -1,4 +1,4 @@
-# flyte-deploy
+# flyte-deploy-aws
 
 A [Claude Code](https://docs.claude.com/en/docs/claude-code) skill that walks an agent
 through deploying a **Flyte v2 (`flyte-binary`) cluster on AWS from scratch**: EKS + S3 +
@@ -13,11 +13,11 @@ It encodes the full runbook plus the non-obvious gotchas that break a first depl
 
 ```
 /plugin marketplace add flyteorg/skills
-/plugin install flyte-deploy@flyte-skills
+/plugin install flyte-deploy-aws@flyte-skills
 ```
 
 Then ask Claude to "deploy a Flyte v2 cluster on AWS", or invoke it directly with
-`/flyte-deploy:flyte-deploy-aws`.
+`/flyte-deploy-aws:flyte-deploy-aws`.
 
 ## Install (manual)
 
