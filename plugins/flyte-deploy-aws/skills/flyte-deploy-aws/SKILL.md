@@ -14,10 +14,17 @@ The chart does NOT provision infrastructure. Stand up four things first:
 controller.** This skill does all four with `eksctl` + `aws` + `helm`, then installs the
 `flyte-binary` chart (the v2 chart; defaults to `flyte-binary-v2` + `flyteconsole-v2`).
 
-Chart source: the `charts/flyte-binary` directory in the flyte repo, or the published repo
-`helm repo add flyteorg https://flyteorg.github.io/flyte && helm repo update` (chart =
-`flyteorg/flyte-binary`). Official deployment docs: https://flyte.org (Deployment → Flyte
-deployment → Installing Flyte). Validated end-to-end on EKS.
+**Get the chart first.** Every `helm`/`kubectl` command below references the local chart path
+`./charts/flyte-binary` (including the TaskAction CRD at
+`./charts/flyte-binary/templates/crds/flyte.org_taskactions.yaml`), so clone the flyte repo and
+run the rest from its root:
+```bash
+git clone https://github.com/flyteorg/flyte && cd flyte   # ./charts/flyte-binary now resolves
+```
+(Alternatively `helm repo add flyteorg https://flyteorg.github.io/flyte && helm repo update` and
+install `flyteorg/flyte-binary` — but then you have no local CRD file, so fetch the CRD from the
+repo for the Step 5 idempotency check. The clone is simpler; prefer it.) Official docs:
+https://flyte.org (Deployment → Flyte deployment → Installing Flyte). Validated end-to-end on EKS.
 
 > Replace every placeholder in angle brackets and the example hostnames/IDs with your own.
 
@@ -28,15 +35,24 @@ deployment → Installing Flyte). Validated end-to-end on EKS.
 - eksctl writes the kubeconfig context (e.g. `<user>@flyte-v2.<region>.eksctl.io`). Pass
   `kubectl --context <ctx>` (and `helm --kube-context <ctx>`) per command rather than
   `kubectl config use-context` — that way you don't mutate the operator's current context.
-- Decide: region, name prefix, **RDS vs in-cluster Postgres**, and **exposure**:
-  ALB+TLS needs a Route53 zone + ACM cert; **ALB HTTP-only needs neither** (reached at
-  the auto `*.elb.amazonaws.com` name) — the simplest default when you own no domain.
+- Decide: region, name prefix, and **exposure**: ALB+TLS needs a Route53 zone + ACM cert;
+  **ALB HTTP-only needs neither** (reached at the auto `*.elb.amazonaws.com` name) — the
+  simplest default when you own no domain. (This skill provisions **RDS PostgreSQL** for the DB;
+  an in-cluster Postgres is out of scope here — RDS is assumed by Steps 3–5.)
 
+**Persist your variables.** This deploy spans many commands and derives values you can't
+recover later — most critically the **random `DBPW`** (Step 3), plus `ACCT`, `BUCKET`,
+`RDS_HOST`, `IRSA_ARN`, etc. If your shell state resets between steps (or your AWS session
+token expires and you re-auth in a fresh shell), these are gone. Keep them in a file you
+re-`source` at the start of every step, and append each derived value as you compute it:
 ```bash
 export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_SESSION_TOKEN=...
 export AWS_DEFAULT_REGION=us-west-2
-PREFIX=flyte-v2; REGION=us-west-2; CLUSTER=$PREFIX
-ACCT=$(aws sts get-caller-identity --query Account --output text)   # confirm the RIGHT account first
+ENVF=~/flyte-deploy.env                                   # source this at every step
+{ echo "export PREFIX=flyte-v2 REGION=us-west-2 CLUSTER=flyte-v2"
+  echo "export ACCT=$(aws sts get-caller-identity --query Account --output text)"  # confirm the RIGHT account
+} >> $ENVF && source $ENVF
+# As you create infra, append its outputs, e.g.:  echo "export DBPW='$DBPW' RDS_HOST=$RDS_HOST" >> $ENVF
 # Check for an existing domain/cert (empty => go ALB HTTP-only):
 aws route53 list-hosted-zones --query 'HostedZones[].Name' --output text
 aws acm list-certificates --region $REGION --query 'CertificateSummaryList[].DomainName' --output text
@@ -163,18 +179,12 @@ SUBNETS=$(aws ec2 describe-subnets --region $REGION --filters "Name=vpc-id,Value
   "Name=tag:kubernetes.io/role/internal-elb,Values=1" --query 'Subnets[].SubnetId' --output text)
 # CRITICAL: source SG must be the EKS-managed cluster SG actually on the NODES,
 # NOT ClusterSharedNodeSecurityGroup. Pod egress uses the node primary-ENI SG.
-NODESG=$(aws ec2 describe-instances --region $REGION \
-  --filters "Name=tag:eks:cluster-name,Values=$CLUSTER" \
-  --query 'Reservations[0].Instances[0].SecurityGroups[?contains(GroupName,`eks-cluster-sg`)].GroupId' --output text)
-# (If nodes aren't up yet, grab it later and add the rule then — that's all the DB needs.)
-
 aws rds create-db-subnet-group --region $REGION --db-subnet-group-name $PREFIX-db-subnets \
   --db-subnet-group-description "Flyte v2 private DB subnets" --subnet-ids $SUBNETS
 RDSSG=$(aws ec2 create-security-group --region $REGION --group-name $PREFIX-rds-sg \
   --description "Flyte v2 RDS 5432 from cluster nodes" --vpc-id $VPC --query GroupId --output text)
-aws ec2 authorize-security-group-ingress --region $REGION --group-id $RDSSG \
-  --protocol tcp --port 5432 --source-group $NODESG
-DBPW=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 28)   # store it somewhere safe
+DBPW=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 28)
+echo "export DBPW='$DBPW' RDSSG=$RDSSG VPC=$VPC" >> $ENVF   # persist (DBPW is unrecoverable)
 aws rds create-db-instance --region $REGION --db-instance-identifier $PREFIX-db \
   --engine postgres --db-instance-class db.t3.micro --allocated-storage 20 --storage-type gp3 \
   --master-username flyte --master-user-password "$DBPW" --db-name flyte \
@@ -183,6 +193,20 @@ aws rds create-db-instance --region $REGION --db-instance-identifier $PREFIX-db 
 # Endpoint (when status=available):
 RDS_HOST=$(aws rds describe-db-instances --region $REGION --db-instance-identifier $PREFIX-db \
   --query 'DBInstances[0].Endpoint.Address' --output text)
+echo "export RDS_HOST=$RDS_HOST" >> $ENVF
+```
+
+**Open 5432 from the nodes — do this once the nodegroup is up** (`kubectl get nodes` Ready),
+not before: pod egress uses the **EKS-managed cluster SG on the nodes** (`eks-cluster-sg-*`),
+NOT `ClusterSharedNodeSecurityGroup` (gotcha 2). If you started RDS in parallel with Step 1,
+the nodes may not exist yet — that's why this is its own step. The DB just needs this one rule:
+```bash
+NODESG=$(aws ec2 describe-instances --region $REGION \
+  --filters "Name=tag:eks:cluster-name,Values=$CLUSTER" "Name=instance-state-name,Values=running" \
+  --query 'Reservations[0].Instances[0].SecurityGroups[?contains(GroupName,`eks-cluster-sg`)].GroupId' --output text)
+[ -n "$NODESG" ] || { echo "no running nodes yet — wait for the nodegroup, then re-run"; }
+aws ec2 authorize-security-group-ingress --region $REGION --group-id $RDSSG \
+  --protocol tcp --port 5432 --source-group $NODESG   # init container retries until this lands
 ```
 
 ## Step 4 — AWS Load Balancer Controller (for ALB ingress)
@@ -212,14 +236,20 @@ aws iam create-policy-version --policy-arn $ALB_POLICY_ARN --policy-document fil
 
 ## Step 5 — helm install flyte-binary
 
-`values-eks.yaml` (ALB HTTP-only variant). Note this chart uses `metadataContainer`
-(no `userDataContainer`) and its run output prefix defaults to a nonexistent
-`s3://flyte-data` — override `storagePrefix` to your bucket:
+`values-eks.yaml` (ALB HTTP-only variant). The UPPERCASE tokens (`BUCKET`, `RDS_HOST`, `DBPW`,
+`IRSA_ARN`) and `region:` are placeholders — substitute your real values before installing, e.g.
+`sed -i "s/BUCKET/$BUCKET/g; s/RDS_HOST/$RDS_HOST/; s/DBPW/$DBPW/; s#IRSA_ARN#$IRSA_ARN#; s/us-west-2/$REGION/g" values-eks.yaml`
+(or hand-edit). Note this chart uses `metadataContainer` (no `userDataContainer`) and its run
+output prefix defaults to a nonexistent `s3://flyte-data` — override `storagePrefix` to your bucket:
 
 ```yaml
 fullnameOverride: flyte
 flyte-core-components:
   runs: { storagePrefix: "s3://BUCKET" }   # under `runs`, NOT `runs.server` (else ignored)
+deployment:
+  image: { pullPolicy: Always }   # :latest is floating + CI-synced — re-pull on (re)start
+console:
+  image: { pullPolicy: Always }
 configuration:
   database:
     postgres:
@@ -232,7 +262,7 @@ configuration:
   storage:
     metadataContainer: BUCKET
     provider: s3
-    providerConfig: { s3: { region: us-west-2, authType: iam } }
+    providerConfig: { s3: { region: us-west-2, authType: iam } }   # set to your $REGION
   inline: { executor: { defaultK8sServiceAccount: flyte } }   # task pods inherit S3 via IRSA
 serviceAccount:
   create: true
@@ -300,10 +330,11 @@ a non-issue on a normal `:latest` deploy.
 
 ## Step 6 — Verify
 
+The HTTP ingress is named `<fullname>-http` — `flyte-http` with `fullnameOverride: flyte` above.
 ```bash
 ALB=$(kubectl -n flyte get ingress flyte-http -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 curl -s -X POST "http://$ALB/flyteidl2.project.ProjectService/ListProjects" \
-  -H 'Content-Type: application/json' -d '{}'        # => JSON with the seeded flytesnacks project
+  -H 'Content-Type: application/json' -d '{}'   # => JSON listing flytesnacks (seeded on first boot)
 curl -s -o /dev/null -w "%{http_code}\n" "http://$ALB/v2"   # => 200 (console)
 ```
 ALB takes ~2-3 min after the address appears to pass health checks and serve 200.
