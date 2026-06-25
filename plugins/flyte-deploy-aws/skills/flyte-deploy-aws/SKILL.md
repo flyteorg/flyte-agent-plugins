@@ -277,19 +277,29 @@ missing it (the watch won't retry a resource that 404'd at boot). On a normal in
 creates the CRD before the pod is Ready, so the watch establishes on first boot — don't restart
 reflexively, it's a wasted second rollout (+ image re-pull on a floating tag).
 
-**Image selection.** The chart defaults to `cr.flyte.org/flyteorg/flyte-binary-v2:latest`
-(+ `ghcr.io/unionai-oss/flyteconsole-v2:latest`). To track the **nightly** build or pin a
-version, override in values:
+**Image selection — default to `nightly`, NOT the chart default.** The chart defaults to
+`cr.flyte.org/flyteorg/flyte-binary-v2:latest` (+ `ghcr.io/unionai-oss/flyteconsole-v2:latest`),
+but `:latest` is a **stable channel that lags the schema migrations** the binary expects. v2 is
+moving fast: a freshly-installed `:latest` binary can run DB migrations whose columns its own
+`models.*` structs don't yet read, and listing runs then fails with
+`missing destination name <col> in *[]*models.Action` (see gotcha 9). **Override to `nightly`
+on every fresh install** so the binary's code and the schema it migrates always match:
 ```yaml
 deployment:
   image:
     repository: ghcr.io/flyteorg/flyte-binary-v2
-    tag: nightly          # or a pinned tag/digest
-    pullPolicy: Always    # re-pull floating tags (latest/nightly) on every (re)start
+    tag: nightly          # default for fresh installs; the schema matches the code
+    pullPolicy: Always    # re-pull the floating tag on every (re)start
 console:
   image:
     pullPolicy: Always
 ```
+The image and the database schema are a matched pair — **the binary owns its migrations, so a
+given image only works against a DB it (or a same-or-newer image) migrated.** This is why a
+**fresh DB is the safe default**: let `nightly` create the schema from scratch. Reusing a DB
+that an *older or newer* image touched is the #1 cause of the `missing destination name` error
+(gotcha 9). Pin a specific `nightly-YYYYMMDD` tag or a digest only once you've verified that
+exact image lists runs cleanly, so the deploy is reproducible.
 With a floating tag, `kubectl rollout restart deploy/flyte -n flyte` forces a fresh pull
 (the wait-for-db init container uses a fixed `postgres` tag — leave it `IfNotPresent`).
 **For a timed demo, pin a fixed tag/digest and set `pullPolicy: IfNotPresent`** so the layer
@@ -382,7 +392,15 @@ Gates the console at the load balancer via ALB `authenticate-oidc` — the binar
 unchanged. **Requires HTTPS** (see TLS above). Tradeoff: the action applies to ALL paths on
 the ingress, so the browser console works (same-origin API calls carry the ALB session
 cookie) but **CLI/SDK clients get 302'd** — add a higher-precedence `ingress.apiJwtIngress`
-(Bearer-match, no auth action) to let token clients bypass (see CLI Bearer-bypass below).
+that matches `Authorization: Bearer*` and JWT-validates it at the ALB (see CLI Bearer-bypass
+below).
+
+> **The Flyte binary does NOT validate tokens.** Its server wires no auth interceptor — it
+> trusts whatever reaches it (`TrustForwardedIdentityHeaders`). So auth has to be enforced at
+> the edge. A Bearer-match ingress with *no* validation action just forwards the token blindly,
+> leaving the API **wide open** (any `Authorization: Bearer anything` returns 200). To actually
+> lock it down you need ALB-native JWT validation on that ingress (the `jwt-validation`
+> annotation below) — not just a Bearer-match condition.
 
 1. Add the redirect URI **`https://<host>/oauth2/idpresponse`** to the OIDC app (fixed ALB
    callback path) — login fails without it.
@@ -445,10 +463,30 @@ ordered by `group.order` (lower = higher precedence), all sharing one `group.nam
          externalAuthServerBaseUrl: "https://<idp>/oauth2/default"
          flyteClient: { clientId: <native-PKCE-app>, redirectUri: http://localhost:53593/callback, scopes: [openid, profile, offline_access] }
    ```
-2. Add `group.name: <group>` + `group.order: "-100"` to the main `httpAnnotations`, and add
-   `ingress.apiJwtIngress` (enabled, order -140, `conditions.<fullname>-http` matching
-   `Bearer*`, `jwt-validation` pointing at the IdP JWKS endpoint) and `ingress.wellknownIngress`
-   (enabled, order -150, no auth). All three need cert-arn + listen-ports + ssl-redirect.
+2. Add `group.name: <group>` + `group.order: "-100"` to the main `httpAnnotations`. Then add
+   `ingress.apiJwtIngress` (enabled, order -140) and `ingress.wellknownIngress` (enabled, order
+   -150, no auth). All three need cert-arn + listen-ports + ssl-redirect. The apiJwtIngress
+   carries **two** annotations that together do the lock-down — the Bearer-match condition AND
+   ALB-native JWT validation (the `conditions.*` key targets the rendered backend service name,
+   `<fullname>-http`, e.g. `flyte-http`):
+   ```yaml
+   ingress:
+     apiJwtIngress:
+       enabled: true
+       annotations:
+         alb.ingress.kubernetes.io/group.name: <group>
+         alb.ingress.kubernetes.io/group.order: "-140"
+         alb.ingress.kubernetes.io/conditions.<fullname>-http: '[{"field":"http-header","httpHeaderConfig":{"httpHeaderName":"Authorization","values":["Bearer*"]}}]'
+         # ALB checks signature + iss/exp against the IdP JWKS; bad/expired token -> 401 at the edge
+         alb.ingress.kubernetes.io/jwt-validation: '{"jwksEndpoint":"https://<idp>/oauth2/default/v1/keys","issuer":"https://<idp>/oauth2/default"}'
+         # plus the shared cert-arn / listen-ports / ssl-redirect / target-type / healthcheck-* annotations
+   ```
+   **`jwt-validation` needs a recent controller** — ALB native JWT verification shipped Nov 2025,
+   exposed by aws-load-balancer-controller as `alb.ingress.kubernetes.io/jwt-validation`. On an
+   older controller the annotation is silently ignored and the API stays open — confirm the
+   controller is new enough (check its release date, not just a high-looking version number) and
+   verify the 401 below. The `conditions.*` match alone (no `jwt-validation`) does NOT validate
+   anything; it only routes Bearer requests past the cookie flow.
 3. `helm upgrade`. **Adding group.name recreates the ALB under a new name** (`k8s-<group>-*`)
    and deletes the old standalone one — **re-point the DNS CNAME to the new ALB DNS name.**
 4. Verify (use `curl --connect-to host:443:<alb>:443` before DNS propagates):
@@ -685,3 +723,39 @@ aws iam delete-policy --policy-arn arn:aws:iam::$ACCT:policy/AWSLoadBalancerCont
    uninstall, manage the CRD entirely out-of-band: delete it from the chart's `templates/crds/`
    (so no release ever lists it) and `kubectl apply` it yourself once. Otherwise just rely on the
    self-healing install above — simpler, and fine for demos/redeploys.
+9. **Listing runs/tasks fails: `missing destination name <col> in *[]*models.Action`.** The
+   install is green, the console loads, but opening a project's runs (or any
+   `RunService/ListActions` / `ListRuns` call) returns
+   `{"code":"internal","message":"failed to list actions: missing destination name created_by in *[]*models.Action"}`
+   (the column varies — `created_by`, `executed_by`, `created_by_subject`, …). **Root cause: the
+   binary image and the DB schema disagree.** The binary owns its migrations, so the `actions`
+   table has a column its running `models.Action` struct can't scan — i.e. the schema was created
+   by a *different* image than the one running. Two ways in:
+   - **Image lags the schema** (most common with the chart's `:latest`): the stable `:latest` is
+     behind `main`, so it can't read columns a newer migration added. **Fix: use `nightly`**
+     (Step 5 image selection) so code and migrations match.
+   - **Reused DB is ahead of (or on a different branch than) the image**: the DB was migrated by a
+     newer/feature-branch image (e.g. one carrying `executed_by`) that `nightly` doesn't match yet.
+   Diagnose, then fix by making the schema match the image — on a fresh/disposable DB the clean
+   fix is to let the chosen image re-migrate from scratch:
+   ```bash
+   # 1. see which extra columns the DB has vs what the image expects
+   kubectl --context <ctx> -n flyte run pg --rm -i --restart=Never --image=postgres:16 \
+     --env PGPASSWORD=<pw> --command -- psql "host=<rds> user=flyte dbname=flyte sslmode=require" -A -t \
+     -c "select column_name from information_schema.columns where table_name='actions' and column_name like '%_by%';"
+   # 2. if there's NO run data worth keeping (check: select count(*) from actions;), reset the schema
+   #    and let the image re-migrate on boot:
+   kubectl --context <ctx> -n flyte scale deploy/flyte --replicas=0
+   kubectl --context <ctx> -n flyte run pg --rm -i --restart=Never --image=postgres:16 \
+     --env PGPASSWORD=<pw> --command -- psql "host=<rds> user=flyte dbname=flyte sslmode=require" \
+     -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO flyte; GRANT ALL ON SCHEMA public TO public;"
+   kubectl --context <ctx> -n flyte scale deploy/flyte --replicas=1   # re-migrates clean
+   ```
+   Then confirm in-cluster (bypasses the ALB JWT gate):
+   `kubectl -n flyte run c --rm -i --image=curlimages/curl --restart=Never -- curl -s -XPOST
+   http://flyte-http.flyte:8090/flyteidl2.workflow.RunService/ListActions -H 'Content-Type: application/json'
+   -d '{"project_id":{"domain":"development","name":"flytesnacks"}}'` → `{}` (not the error).
+   **Prevention: a fresh DB + `nightly` is the default that avoids this entirely** — only reuse a DB
+   when you know the image that last migrated it. A green `helm install` and a `302` from `/v2` do
+   NOT prove run-listing works; the binary serves the console and auth-redirects even when this
+   query is broken, so exercise `ListActions` after deploy.
