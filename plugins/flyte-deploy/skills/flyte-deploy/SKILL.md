@@ -14,9 +14,10 @@ The chart does NOT provision infrastructure. Stand up four things first:
 controller.** This skill does all four with `eksctl` + `aws` + `helm`, then installs the
 `flyte-binary` chart (the v2 chart; defaults to `flyte-binary-v2` + `flyteconsole-v2`).
 
-Chart source: the `charts/flyte-binary` directory in the flyte repo, or `helm repo add
-flyteorg https://flyteorg.github.io/flyte` once published. Official deployment docs:
-https://flyte.org (Deployment → Flyte deployment). Validated end-to-end on EKS.
+Chart source: the `charts/flyte-binary` directory in the flyte repo, or the published repo
+`helm repo add flyteorg https://flyteorg.github.io/flyte && helm repo update` (chart =
+`flyteorg/flyte-binary`). Official deployment docs: https://flyte.org (Deployment → Flyte
+deployment → Installing Flyte). Validated end-to-end on EKS.
 
 > Replace every placeholder in angle brackets and the example hostnames/IDs with your own.
 
@@ -527,6 +528,58 @@ Gotchas: (a) `authMetadata`/`storagePrefix` go under `runs`, not `runs.server` �
 they're silently ignored and `GetOAuth2Metadata` returns `unimplemented`. (b) config-only helm
 changes may not roll the pod — `kubectl rollout restart deploy/flyte` to be sure. (c) the
 `conditions.*` key must match the rendered backend service name (`<fullname>-http`).
+
+## Optional `configuration.inline` tuning
+
+Anything under `configuration.inline` is merged into the rendered Flyte config — it's how you
+set options the top-level values don't expose. All of the below go in `values-eks.yaml`; apply
+with `helm upgrade flyte ... -f values-eks.yaml` (config-only changes may not roll the pod —
+`kubectl rollout restart deploy/flyte -n flyte` if it doesn't pick them up).
+
+**Default task resources.** CPU/memory requests for task pods that don't set their own:
+```yaml
+configuration:
+  inline:
+    plugins:
+      k8s:
+        default-cpus: 500m
+        default-memory: 1Gi
+```
+
+**Default task scheduling.** Tolerations / affinity / node selectors / injected env on every
+task pod (same `plugins.k8s` block — `default-env-vars` is also where gotcha 7's callback vars
+go on older charts):
+```yaml
+configuration:
+  inline:
+    plugins:
+      k8s:
+        default-tolerations:
+          - { key: flyte.org/node-role, operator: Equal, value: worker, effect: NoSchedule }
+        default-affinity: {}             # a standard core/v1 Affinity
+        default-env-vars:
+          - MY_ENV_VAR: value            # injected into every task pod
+```
+
+**OpenTelemetry.** Off by default (`otel.type: noop`). Point it at an OTLP collector — prefer
+`otlpgrpc` (the `otlphttp` metric exporter reuses the trace endpoint path):
+```yaml
+configuration:
+  inline:
+    otel:
+      type: otlpgrpc                     # noop | file | jaeger | otlpgrpc | otlphttp
+      otlpgrpc: { endpoint: http://otel-collector.flyte.svc.cluster.local:4317 }
+      sampler: { parentSampler: traceid, traceIdRatio: 0.01 }   # keep 1% of traces in prod
+```
+
+**DB password (and S3 keys) from a Secret.** Setting `configuration.database.postgres.password`
+already writes it into a mounted k8s Secret (not the plaintext ConfigMap); same for S3 access
+keys when `authType: accesskey`. To keep the password out of the values file entirely, leave
+`password` empty and either reference an existing Secret with
+`configuration.extraInlineSecretRefs`, or mount it as a file and point
+`configuration.database.postgres.passwordPath` at it (`password` and `passwordPath` are mutually
+exclusive). This is the better choice than the plaintext `password:` shown in Step 5 when the
+values file is committed or shared.
 
 ## Stable ALB across redeploys (anchor ingress)
 
