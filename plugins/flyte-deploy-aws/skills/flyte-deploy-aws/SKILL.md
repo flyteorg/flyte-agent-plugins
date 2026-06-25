@@ -1,5 +1,5 @@
 ---
-name: flyte-deploy
+name: flyte-deploy-aws
 description: 'Use when deploying a Flyte v2 (flyte-binary / flyte2) cluster on AWS from scratch — provisions EKS + S3 + RDS PostgreSQL + AWS Load Balancer Controller, then helm-installs the flyte-binary chart behind an ALB, with optional TLS and Okta SSO. Trigger words: "deploy flyte", "flyte v2 on AWS", "flyte EKS".'
 ---
 
@@ -14,79 +14,12 @@ The chart does NOT provision infrastructure. Stand up four things first:
 controller.** This skill does all four with `eksctl` + `aws` + `helm`, then installs the
 `flyte-binary` chart (the v2 chart; defaults to `flyte-binary-v2` + `flyteconsole-v2`).
 
-Chart source: the `charts/flyte-binary` directory in the flyte repo, or `helm repo add
-flyteorg https://flyteorg.github.io/flyte` once published. Official deployment docs:
-https://flyte.org (Deployment → Flyte deployment). Validated end-to-end on EKS.
+Chart source: the `charts/flyte-binary` directory in the flyte repo, or the published repo
+`helm repo add flyteorg https://flyteorg.github.io/flyte && helm repo update` (chart =
+`flyteorg/flyte-binary`). Official deployment docs: https://flyte.org (Deployment → Flyte
+deployment → Installing Flyte). Validated end-to-end on EKS.
 
 > Replace every placeholder in angle brackets and the example hostnames/IDs with your own.
-
-## Fast path — redeploy onto existing infra (demo, < 1 min)
-
-When the cluster, RDS, S3, IRSA, ALB controller, cert, DNS, and Okta app **already exist**
-(a repeat deploy or a demo on a cluster you stood up earlier), the whole deploy is **one
-`helm install` + one rollout wait**. SKIP Steps 0–4 entirely, and skip the slow extras that
-add minutes for zero benefit on known-good infra:
-
-> **ALWAYS confirm the deploy parameters with the user FIRST — every time, including on the
-> fast path.** "Fast" means skipping infra *provisioning* and machine *probing*, NEVER skipping
-> the user confirmation. Before any `helm install`, ask (via the question table in Step 0.5):
-> reuse-which-cluster, exposure (HTTP / TLS / TLS+SSO), hostname, cert, OIDC issuer/client, and
-> which S3/RDS. Surface prior values (from the saved `values-eks.yaml` / live infra) as
-> *suggestions to confirm*, not silent defaults — then restate the final set before installing.
-> Do not infer "they obviously want the same as last time" and skip the question.
-
-- **No discovery legwork — but always confirm.** Don't re-list clusters/zones/certs or re-read
-  old values files to *rediscover* what to use; reuse the `values-eks.yaml` you saved and a
-  sourced `aws.env`. You still ASK the user to confirm those values first (above) — skipping the
-  machine probing is the speedup, skipping the confirmation is the bug.
-- **No `--dry-run`, no ephemeral `postgres` DB-auth pod.** Those validate first-time infra; on
-  a redeploy they just cost an image pull + round-trips.
-- **CRD must exist BEFORE the binary boots.** `helm install` recreates the TaskAction CRD (a
-  chart template) alongside the Deployment. The current `flyte-binary-v2` **hard-fails at
-  startup if the CRD isn't discoverable** — `Error: setup failed: ... no matches for kind
-  "TaskAction"`, exit 1, CrashLoopBackOff — it does NOT soft-retry the watch (that's a change
-  from older builds; gotcha 8). So there's a boot race: if the pod starts before the CRD is
-  Established, it crashloops, then self-heals after a restart or two once discovery catches up
-  (~30–60s). `--wait` rides this out. If it's still crashlooping, re-apply the CRD and
-  `kubectl delete pod` the binary (or `rollout restart`). On a **shared cluster the CRD gets
-  deleted out from under you** (every `helm uninstall` deletes it — manifest membership — and
-  stray `kubectl delete crd`s happen); always re-confirm it after install (gotcha 8).
-- **Cached, pinned image.** Keep `pullPolicy: IfNotPresent` and a **fixed tag** so the layer
-  already on the node is reused. Floating `nightly` + `pullPolicy: Always` re-pulls on every
-  rollout (~30–60s) — great for tracking latest, wrong for a timed demo. Pre-pull once before
-  the demo if you must use a fresh tag.
-
-```bash
-source aws.env                              # creds + AWS_DEFAULT_REGION, sourced once
-CTX=flyte-v2; CHART=~/git/flyte/charts/flyte-binary; HOST=<your-host>
-
-# --wait blocks until pods are actually Ready. Do NOT use a bare `helm install` followed by
-# `kubectl rollout status` — run right after install, rollout status RACES (it reads the
-# not-yet-updated Deployment status and falsely prints "successfully rolled out" in ~1s, so
-# any timing you take is garbage). --wait is the honest signal and the accurate stopwatch.
-# Also DON'T swallow install errors (no `2>/dev/null`): if the release already exists, install
-# fails and you'd otherwise mistake a stale Ready deployment for a fresh deploy.
-helm install flyte $CHART --kube-context $CTX -n flyte --create-namespace -f values-eks.yaml \
-  --wait --timeout 3m     # returns only when Ready; ~30-45s with a cached image
-
-# CRD safety net — only intervenes (and only then restarts) if it's genuinely gone:
-kubectl --context $CTX get crd taskactions.flyte.org >/dev/null 2>&1 || {
-  kubectl --context $CTX apply -f $CHART/templates/crds/flyte.org_taskactions.yaml
-  kubectl --context $CTX -n flyte rollout restart deploy/flyte
-  kubectl --context $CTX -n flyte rollout status deploy/flyte --timeout=120s; }
-
-curl -s -o /dev/null -w '%{http_code}\n' https://$HOST/v2   # => 302 (SSO) ; done
-```
-
-Keep the **anchor ingress** (see "Stable ALB across redeploys") so the ALB DNS name never
-changes — then a demo is purely `helm uninstall` ↔ `helm install` with no DNS re-point and no
-Okta redirect-URI change. The uninstall→install cycle re-creates the CRD on its own (present
-before the pod is Ready → no restart); only a CRD deleted *while the binary runs* needs the
-safety-net restart. To make the CRD survive `helm uninstall` on a shared cluster, manage it
-out-of-band — see gotcha 8 (stripping ownership labels alone does NOT stop uninstall).
-
-The rest of this skill is the **from-scratch** path (provision everything). Use it only when the
-infra above doesn't already exist.
 
 ## Prerequisites & decisions
 
@@ -342,7 +275,7 @@ kubectl --context <ctx> get crd taskactions.flyte.org -o jsonpath='{.status.cond
 Only `rollout restart` if you applied the CRD onto an **already-running** binary that was
 missing it (the watch won't retry a resource that 404'd at boot). On a normal install the chart
 creates the CRD before the pod is Ready, so the watch establishes on first boot — don't restart
-reflexively, it's a wasted second rollout (+ image re-pull on a floating tag). See the Fast path.
+reflexively, it's a wasted second rollout (+ image re-pull on a floating tag).
 
 **Image selection.** The chart defaults to `cr.flyte.org/flyteorg/flyte-binary-v2:latest`
 (+ `ghcr.io/unionai-oss/flyteconsole-v2:latest`). To track the **nightly** build or pin a
@@ -527,6 +460,58 @@ Gotchas: (a) `authMetadata`/`storagePrefix` go under `runs`, not `runs.server` �
 they're silently ignored and `GetOAuth2Metadata` returns `unimplemented`. (b) config-only helm
 changes may not roll the pod — `kubectl rollout restart deploy/flyte` to be sure. (c) the
 `conditions.*` key must match the rendered backend service name (`<fullname>-http`).
+
+## Optional `configuration.inline` tuning
+
+Anything under `configuration.inline` is merged into the rendered Flyte config — it's how you
+set options the top-level values don't expose. All of the below go in `values-eks.yaml`; apply
+with `helm upgrade flyte ... -f values-eks.yaml` (config-only changes may not roll the pod —
+`kubectl rollout restart deploy/flyte -n flyte` if it doesn't pick them up).
+
+**Default task resources.** CPU/memory requests for task pods that don't set their own:
+```yaml
+configuration:
+  inline:
+    plugins:
+      k8s:
+        default-cpus: 500m
+        default-memory: 1Gi
+```
+
+**Default task scheduling.** Tolerations / affinity / node selectors / injected env on every
+task pod (same `plugins.k8s` block — `default-env-vars` is also where gotcha 7's callback vars
+go on older charts):
+```yaml
+configuration:
+  inline:
+    plugins:
+      k8s:
+        default-tolerations:
+          - { key: flyte.org/node-role, operator: Equal, value: worker, effect: NoSchedule }
+        default-affinity: {}             # a standard core/v1 Affinity
+        default-env-vars:
+          - MY_ENV_VAR: value            # injected into every task pod
+```
+
+**OpenTelemetry.** Off by default (`otel.type: noop`). Point it at an OTLP collector — prefer
+`otlpgrpc` (the `otlphttp` metric exporter reuses the trace endpoint path):
+```yaml
+configuration:
+  inline:
+    otel:
+      type: otlpgrpc                     # noop | file | jaeger | otlpgrpc | otlphttp
+      otlpgrpc: { endpoint: http://otel-collector.flyte.svc.cluster.local:4317 }
+      sampler: { parentSampler: traceid, traceIdRatio: 0.01 }   # keep 1% of traces in prod
+```
+
+**DB password (and S3 keys) from a Secret.** Setting `configuration.database.postgres.password`
+already writes it into a mounted k8s Secret (not the plaintext ConfigMap); same for S3 access
+keys when `authType: accesskey`. To keep the password out of the values file entirely, leave
+`password` empty and either reference an existing Secret with
+`configuration.extraInlineSecretRefs`, or mount it as a file and point
+`configuration.database.postgres.passwordPath` at it (`password` and `passwordPath` are mutually
+exclusive). This is the better choice than the plaintext `password:` shown in Step 5 when the
+values file is committed or shared.
 
 ## Stable ALB across redeploys (anchor ingress)
 
