@@ -14,10 +14,17 @@ The chart does NOT provision infrastructure. Stand up four things first:
 controller.** This skill does all four with `eksctl` + `aws` + `helm`, then installs the
 `flyte-binary` chart (the v2 chart; defaults to `flyte-binary-v2` + `flyteconsole-v2`).
 
-Chart source: the `charts/flyte-binary` directory in the flyte repo, or the published repo
-`helm repo add flyteorg https://flyteorg.github.io/flyte && helm repo update` (chart =
-`flyteorg/flyte-binary`). Official deployment docs: https://flyte.org (Deployment → Flyte
-deployment → Installing Flyte). Validated end-to-end on EKS.
+**Get the chart first.** Every `helm`/`kubectl` command below references the local chart path
+`./charts/flyte-binary` (including the TaskAction CRD at
+`./charts/flyte-binary/templates/crds/flyte.org_taskactions.yaml`), so clone the flyte repo and
+run the rest from its root:
+```bash
+git clone https://github.com/flyteorg/flyte && cd flyte   # ./charts/flyte-binary now resolves
+```
+(Alternatively `helm repo add flyteorg https://flyteorg.github.io/flyte && helm repo update` and
+install `flyteorg/flyte-binary` — but then you have no local CRD file, so fetch the CRD from the
+repo for the Step 5 idempotency check. The clone is simpler; prefer it.) Official docs:
+https://flyte.org (Deployment → Flyte deployment → Installing Flyte). Validated end-to-end on EKS.
 
 > Replace every placeholder in angle brackets and the example hostnames/IDs with your own.
 
@@ -28,15 +35,24 @@ deployment → Installing Flyte). Validated end-to-end on EKS.
 - eksctl writes the kubeconfig context (e.g. `<user>@flyte-v2.<region>.eksctl.io`). Pass
   `kubectl --context <ctx>` (and `helm --kube-context <ctx>`) per command rather than
   `kubectl config use-context` — that way you don't mutate the operator's current context.
-- Decide: region, name prefix, **RDS vs in-cluster Postgres**, and **exposure**:
-  ALB+TLS needs a Route53 zone + ACM cert; **ALB HTTP-only needs neither** (reached at
-  the auto `*.elb.amazonaws.com` name) — the simplest default when you own no domain.
+- Decide: region, name prefix, and **exposure**: ALB+TLS needs a Route53 zone + ACM cert;
+  **ALB HTTP-only needs neither** (reached at the auto `*.elb.amazonaws.com` name) — the
+  simplest default when you own no domain. (This skill provisions **RDS PostgreSQL** for the DB;
+  an in-cluster Postgres is out of scope here — RDS is assumed by Steps 3–5.)
 
+**Persist your variables.** This deploy spans many commands and derives values you can't
+recover later — most critically the **random `DBPW`** (Step 3), plus `ACCT`, `BUCKET`,
+`RDS_HOST`, `IRSA_ARN`, etc. If your shell state resets between steps (or your AWS session
+token expires and you re-auth in a fresh shell), these are gone. Keep them in a file you
+re-`source` at the start of every step, and append each derived value as you compute it:
 ```bash
 export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_SESSION_TOKEN=...
 export AWS_DEFAULT_REGION=us-west-2
-PREFIX=flyte-v2; REGION=us-west-2; CLUSTER=$PREFIX
-ACCT=$(aws sts get-caller-identity --query Account --output text)   # confirm the RIGHT account first
+ENVF=~/flyte-deploy.env                                   # source this at every step
+{ echo "export PREFIX=flyte-v2 REGION=us-west-2 CLUSTER=flyte-v2"
+  echo "export ACCT=$(aws sts get-caller-identity --query Account --output text)"  # confirm the RIGHT account
+} >> $ENVF && source $ENVF
+# As you create infra, append its outputs, e.g.:  echo "export DBPW='$DBPW' RDS_HOST=$RDS_HOST" >> $ENVF
 # Check for an existing domain/cert (empty => go ALB HTTP-only):
 aws route53 list-hosted-zones --query 'HostedZones[].Name' --output text
 aws acm list-certificates --region $REGION --query 'CertificateSummaryList[].DomainName' --output text
@@ -163,18 +179,12 @@ SUBNETS=$(aws ec2 describe-subnets --region $REGION --filters "Name=vpc-id,Value
   "Name=tag:kubernetes.io/role/internal-elb,Values=1" --query 'Subnets[].SubnetId' --output text)
 # CRITICAL: source SG must be the EKS-managed cluster SG actually on the NODES,
 # NOT ClusterSharedNodeSecurityGroup. Pod egress uses the node primary-ENI SG.
-NODESG=$(aws ec2 describe-instances --region $REGION \
-  --filters "Name=tag:eks:cluster-name,Values=$CLUSTER" \
-  --query 'Reservations[0].Instances[0].SecurityGroups[?contains(GroupName,`eks-cluster-sg`)].GroupId' --output text)
-# (If nodes aren't up yet, grab it later and add the rule then — that's all the DB needs.)
-
 aws rds create-db-subnet-group --region $REGION --db-subnet-group-name $PREFIX-db-subnets \
   --db-subnet-group-description "Flyte v2 private DB subnets" --subnet-ids $SUBNETS
 RDSSG=$(aws ec2 create-security-group --region $REGION --group-name $PREFIX-rds-sg \
   --description "Flyte v2 RDS 5432 from cluster nodes" --vpc-id $VPC --query GroupId --output text)
-aws ec2 authorize-security-group-ingress --region $REGION --group-id $RDSSG \
-  --protocol tcp --port 5432 --source-group $NODESG
-DBPW=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 28)   # store it somewhere safe
+DBPW=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 28)
+echo "export DBPW='$DBPW' RDSSG=$RDSSG VPC=$VPC" >> $ENVF   # persist (DBPW is unrecoverable)
 aws rds create-db-instance --region $REGION --db-instance-identifier $PREFIX-db \
   --engine postgres --db-instance-class db.t3.micro --allocated-storage 20 --storage-type gp3 \
   --master-username flyte --master-user-password "$DBPW" --db-name flyte \
@@ -183,6 +193,20 @@ aws rds create-db-instance --region $REGION --db-instance-identifier $PREFIX-db 
 # Endpoint (when status=available):
 RDS_HOST=$(aws rds describe-db-instances --region $REGION --db-instance-identifier $PREFIX-db \
   --query 'DBInstances[0].Endpoint.Address' --output text)
+echo "export RDS_HOST=$RDS_HOST" >> $ENVF
+```
+
+**Open 5432 from the nodes — do this once the nodegroup is up** (`kubectl get nodes` Ready),
+not before: pod egress uses the **EKS-managed cluster SG on the nodes** (`eks-cluster-sg-*`),
+NOT `ClusterSharedNodeSecurityGroup` (gotcha 2). If you started RDS in parallel with Step 1,
+the nodes may not exist yet — that's why this is its own step. The DB just needs this one rule:
+```bash
+NODESG=$(aws ec2 describe-instances --region $REGION \
+  --filters "Name=tag:eks:cluster-name,Values=$CLUSTER" "Name=instance-state-name,Values=running" \
+  --query 'Reservations[0].Instances[0].SecurityGroups[?contains(GroupName,`eks-cluster-sg`)].GroupId' --output text)
+[ -n "$NODESG" ] || { echo "no running nodes yet — wait for the nodegroup, then re-run"; }
+aws ec2 authorize-security-group-ingress --region $REGION --group-id $RDSSG \
+  --protocol tcp --port 5432 --source-group $NODESG   # init container retries until this lands
 ```
 
 ## Step 4 — AWS Load Balancer Controller (for ALB ingress)
@@ -212,14 +236,20 @@ aws iam create-policy-version --policy-arn $ALB_POLICY_ARN --policy-document fil
 
 ## Step 5 — helm install flyte-binary
 
-`values-eks.yaml` (ALB HTTP-only variant). Note this chart uses `metadataContainer`
-(no `userDataContainer`) and its run output prefix defaults to a nonexistent
-`s3://flyte-data` — override `storagePrefix` to your bucket:
+`values-eks.yaml` (ALB HTTP-only variant). The UPPERCASE tokens (`BUCKET`, `RDS_HOST`, `DBPW`,
+`IRSA_ARN`) and `region:` are placeholders — substitute your real values before installing, e.g.
+`sed -i "s/BUCKET/$BUCKET/g; s/RDS_HOST/$RDS_HOST/; s/DBPW/$DBPW/; s#IRSA_ARN#$IRSA_ARN#; s/us-west-2/$REGION/g" values-eks.yaml`
+(or hand-edit). Note this chart uses `metadataContainer` (no `userDataContainer`) and its run
+output prefix defaults to a nonexistent `s3://flyte-data` — override `storagePrefix` to your bucket:
 
 ```yaml
 fullnameOverride: flyte
 flyte-core-components:
   runs: { storagePrefix: "s3://BUCKET" }   # under `runs`, NOT `runs.server` (else ignored)
+deployment:
+  image: { pullPolicy: Always }   # :latest is floating + CI-synced — re-pull on (re)start
+console:
+  image: { pullPolicy: Always }
 configuration:
   database:
     postgres:
@@ -232,7 +262,7 @@ configuration:
   storage:
     metadataContainer: BUCKET
     provider: s3
-    providerConfig: { s3: { region: us-west-2, authType: iam } }
+    providerConfig: { s3: { region: us-west-2, authType: iam } }   # set to your $REGION
   inline: { executor: { defaultK8sServiceAccount: flyte } }   # task pods inherit S3 via IRSA
 serviceAccount:
   create: true
@@ -277,31 +307,34 @@ missing it (the watch won't retry a resource that 404'd at boot). On a normal in
 creates the CRD before the pod is Ready, so the watch establishes on first boot — don't restart
 reflexively, it's a wasted second rollout (+ image re-pull on a floating tag).
 
-**Image selection.** The chart defaults to `cr.flyte.org/flyteorg/flyte-binary-v2:latest`
-(+ `ghcr.io/unionai-oss/flyteconsole-v2:latest`). To track the **nightly** build or pin a
-version, override in values:
+**Image selection.** The chart default `cr.flyte.org/flyteorg/flyte-binary-v2:latest`
+(+ `ghcr.io/unionai-oss/flyteconsole-v2:latest`) is fine for a normal deploy — Flyte CI now
+pushes `:latest` on every merge to `main`, so its code and the DB migrations it runs are always
+in sync. No image override is needed; just set `pullPolicy: Always` so a restart picks up the
+current build:
 ```yaml
 deployment:
   image:
-    repository: ghcr.io/flyteorg/flyte-binary-v2
-    tag: nightly          # or a pinned tag/digest
-    pullPolicy: Always    # re-pull floating tags (latest/nightly) on every (re)start
+    pullPolicy: Always    # :latest is floating + kept current by CI; re-pull on (re)start
 console:
   image:
     pullPolicy: Always
 ```
-With a floating tag, `kubectl rollout restart deploy/flyte -n flyte` forces a fresh pull
-(the wait-for-db init container uses a fixed `postgres` tag — leave it `IfNotPresent`).
-**For a timed demo, pin a fixed tag/digest and set `pullPolicy: IfNotPresent`** so the layer
-already on the node is reused (a floating `nightly`/`latest` + `Always` re-pulls ~30–60s on
-every rollout). Pre-pull a fresh tag once before the demo if you can't pin.
+With a floating tag, `kubectl rollout restart deploy/flyte -n flyte` forces a fresh pull (the
+wait-for-db init container uses a fixed `postgres` tag — leave it `IfNotPresent`). **For a timed
+demo or a reproducible deploy, pin a digest** (`repository@sha256:…`) + `pullPolicy: IfNotPresent`
+so the layer already on the node is reused and the build can't shift under you. The image and the
+schema are a matched pair (the binary owns its migrations), so if you ever pin/roll *back* to an
+older image against a DB a newer one migrated, you can hit the schema-mismatch error in gotcha 9 —
+a non-issue on a normal `:latest` deploy.
 
 ## Step 6 — Verify
 
+The HTTP ingress is named `<fullname>-http` — `flyte-http` with `fullnameOverride: flyte` above.
 ```bash
 ALB=$(kubectl -n flyte get ingress flyte-http -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 curl -s -X POST "http://$ALB/flyteidl2.project.ProjectService/ListProjects" \
-  -H 'Content-Type: application/json' -d '{}'        # => JSON with the seeded flytesnacks project
+  -H 'Content-Type: application/json' -d '{}'   # => JSON listing flytesnacks (seeded on first boot)
 curl -s -o /dev/null -w "%{http_code}\n" "http://$ALB/v2"   # => 200 (console)
 ```
 ALB takes ~2-3 min after the address appears to pass health checks and serve 200.
@@ -382,7 +415,15 @@ Gates the console at the load balancer via ALB `authenticate-oidc` — the binar
 unchanged. **Requires HTTPS** (see TLS above). Tradeoff: the action applies to ALL paths on
 the ingress, so the browser console works (same-origin API calls carry the ALB session
 cookie) but **CLI/SDK clients get 302'd** — add a higher-precedence `ingress.apiJwtIngress`
-(Bearer-match, no auth action) to let token clients bypass (see CLI Bearer-bypass below).
+that matches `Authorization: Bearer*` and JWT-validates it at the ALB (see CLI Bearer-bypass
+below).
+
+> **The Flyte binary does NOT validate tokens.** Its server wires no auth interceptor — it
+> trusts whatever reaches it (`TrustForwardedIdentityHeaders`). So auth has to be enforced at
+> the edge. A Bearer-match ingress with *no* validation action just forwards the token blindly,
+> leaving the API **wide open** (any `Authorization: Bearer anything` returns 200). To actually
+> lock it down you need ALB-native JWT validation on that ingress (the `jwt-validation`
+> annotation below) — not just a Bearer-match condition.
 
 1. Add the redirect URI **`https://<host>/oauth2/idpresponse`** to the OIDC app (fixed ALB
    callback path) — login fails without it.
@@ -445,10 +486,30 @@ ordered by `group.order` (lower = higher precedence), all sharing one `group.nam
          externalAuthServerBaseUrl: "https://<idp>/oauth2/default"
          flyteClient: { clientId: <native-PKCE-app>, redirectUri: http://localhost:53593/callback, scopes: [openid, profile, offline_access] }
    ```
-2. Add `group.name: <group>` + `group.order: "-100"` to the main `httpAnnotations`, and add
-   `ingress.apiJwtIngress` (enabled, order -140, `conditions.<fullname>-http` matching
-   `Bearer*`, `jwt-validation` pointing at the IdP JWKS endpoint) and `ingress.wellknownIngress`
-   (enabled, order -150, no auth). All three need cert-arn + listen-ports + ssl-redirect.
+2. Add `group.name: <group>` + `group.order: "-100"` to the main `httpAnnotations`. Then add
+   `ingress.apiJwtIngress` (enabled, order -140) and `ingress.wellknownIngress` (enabled, order
+   -150, no auth). All three need cert-arn + listen-ports + ssl-redirect. The apiJwtIngress
+   carries **two** annotations that together do the lock-down — the Bearer-match condition AND
+   ALB-native JWT validation (the `conditions.*` key targets the rendered backend service name,
+   `<fullname>-http`, e.g. `flyte-http`):
+   ```yaml
+   ingress:
+     apiJwtIngress:
+       enabled: true
+       annotations:
+         alb.ingress.kubernetes.io/group.name: <group>
+         alb.ingress.kubernetes.io/group.order: "-140"
+         alb.ingress.kubernetes.io/conditions.<fullname>-http: '[{"field":"http-header","httpHeaderConfig":{"httpHeaderName":"Authorization","values":["Bearer*"]}}]'
+         # ALB checks signature + iss/exp against the IdP JWKS; bad/expired token -> 401 at the edge
+         alb.ingress.kubernetes.io/jwt-validation: '{"jwksEndpoint":"https://<idp>/oauth2/default/v1/keys","issuer":"https://<idp>/oauth2/default"}'
+         # plus the shared cert-arn / listen-ports / ssl-redirect / target-type / healthcheck-* annotations
+   ```
+   **`jwt-validation` needs a recent controller** — ALB native JWT verification shipped Nov 2025,
+   exposed by aws-load-balancer-controller as `alb.ingress.kubernetes.io/jwt-validation`. On an
+   older controller the annotation is silently ignored and the API stays open — confirm the
+   controller is new enough (check its release date, not just a high-looking version number) and
+   verify the 401 below. The `conditions.*` match alone (no `jwt-validation`) does NOT validate
+   anything; it only routes Bearer requests past the cookie flow.
 3. `helm upgrade`. **Adding group.name recreates the ALB under a new name** (`k8s-<group>-*`)
    and deletes the old standalone one — **re-point the DNS CNAME to the new ALB DNS name.**
 4. Verify (use `curl --connect-to host:443:<alb>:443` before DNS propagates):
@@ -685,3 +746,34 @@ aws iam delete-policy --policy-arn arn:aws:iam::$ACCT:policy/AWSLoadBalancerCont
    uninstall, manage the CRD entirely out-of-band: delete it from the chart's `templates/crds/`
    (so no release ever lists it) and `kubectl apply` it yourself once. Otherwise just rely on the
    self-healing install above — simpler, and fine for demos/redeploys.
+9. **Listing runs/tasks fails: `missing destination name <col> in *[]*models.Action`.** The
+   install is green, the console loads, but opening a project's runs (or any
+   `RunService/ListActions` / `ListRuns` call) returns
+   `{"code":"internal","message":"failed to list actions: missing destination name created_by in *[]*models.Action"}`
+   (the column varies — `created_by`, `executed_by`, …). **Root cause: the binary image and the DB
+   schema disagree** — the `actions` table has a column the running `models.Action` struct can't
+   scan, i.e. the schema was migrated by a *different* image than the one running. A normal `:latest`
+   deploy on a fresh DB won't hit this (CI keeps `:latest` and its migrations in sync). It shows up
+   when you **reuse a DB that a newer/feature-branch image migrated** and then run an older image
+   against it (e.g. pinned a digest, or rolled back). Diagnose, then make the schema match the image —
+   on a fresh/disposable DB just let the running image re-migrate from scratch:
+   ```bash
+   # see the extra columns the DB has, and check there's no run data worth keeping:
+   kubectl --context <ctx> -n flyte run pg --rm -i --restart=Never --image=postgres:16 \
+     --env PGPASSWORD=<pw> --command -- psql "host=<rds> user=flyte dbname=flyte sslmode=require" -A -t \
+     -c "select column_name from information_schema.columns where table_name='actions' and column_name like '%_by%';" \
+     -c "select count(*) from actions;"
+   # if count is 0 (or disposable), reset the schema and let the image re-migrate on boot:
+   kubectl --context <ctx> -n flyte scale deploy/flyte --replicas=0
+   kubectl --context <ctx> -n flyte run pg --rm -i --restart=Never --image=postgres:16 \
+     --env PGPASSWORD=<pw> --command -- psql "host=<rds> user=flyte dbname=flyte sslmode=require" \
+     -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO flyte; GRANT ALL ON SCHEMA public TO public;"
+   kubectl --context <ctx> -n flyte scale deploy/flyte --replicas=1   # re-migrates clean
+   ```
+   Confirm in-cluster (bypasses the ALB JWT gate):
+   `kubectl -n flyte run c --rm -i --image=curlimages/curl --restart=Never -- curl -s -XPOST
+   http://flyte-http.flyte:8090/flyteidl2.workflow.RunService/ListActions -H 'Content-Type: application/json'
+   -d '{"project_id":{"domain":"development","name":"flytesnacks"}}'` → `{}` (not the error).
+   A green `helm install` and a `302` from `/v2` do NOT prove run-listing works (the binary serves
+   the console and auth-redirects even when this query is broken), so exercise `ListActions` after a
+   deploy that pins/reuses an image or DB.
