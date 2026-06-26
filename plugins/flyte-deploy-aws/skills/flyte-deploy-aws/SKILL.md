@@ -522,6 +522,162 @@ they're silently ignored and `GetOAuth2Metadata` returns `unimplemented`. (b) co
 changes may not roll the pod — `kubectl rollout restart deploy/flyte` to be sure. (c) the
 `conditions.*` key must match the rendered backend service name (`<fullname>-http`).
 
+## App serving (optional — Knative + Kourier)
+
+Flyte v2 can host long-running **apps** (deployed via the SDK), each published at
+`{name}-{project}-{domain}.<base-domain>`. It's **off by default**: the binary always exposes
+`AppService`, but with no controller behind it the console's Apps tab and any
+`flyteidl2.app.AppService/List` call return **`{"code":"unimplemented","message":"404 Not Found"}`**
+until you enable it. Apps run as **Knative Services**, so this needs Knative Serving + a Knative
+networking layer (Kourier) installed first — your cloud's ALB controller can't be Knative's
+networking layer. Skip this section unless the user wants apps. Official doc:
+https://flyte.org (Deployment → App serving).
+
+**1. Install Knative Serving + Kourier.** Pick a Knative release that supports your cluster's
+k8s version — Knative only supports the most recent k8s minors, so the upstream doc's pinned
+version is often too old (e.g. on k8s 1.34, v1.17 is rejected; v1.22 works). Check the latest
+that matches, and use the **same version** for serving and net-kourier:
+```bash
+KV=knative-v1.22.1   # must support your k8s version; serving + net-kourier must match
+kubectl --context <ctx> apply -f https://github.com/knative/serving/releases/download/$KV/serving-crds.yaml
+kubectl --context <ctx> apply -f https://github.com/knative/serving/releases/download/$KV/serving-core.yaml
+kubectl --context <ctx> apply -f https://github.com/knative-extensions/net-kourier/releases/download/$KV/kourier.yaml
+kubectl --context <ctx> patch configmap/config-network -n knative-serving --type merge \
+  -p '{"data":{"ingress-class":"kourier.ingress.networking.knative.dev"}}'
+kubectl --context <ctx> wait --for=condition=Available deploy --all -n knative-serving --timeout=180s
+kubectl --context <ctx> wait --for=condition=Available deploy --all -n kourier-system --timeout=180s
+```
+
+**2. Configure the apps domain — single-label so one wildcard cert covers every app.** Set
+`config-domain` to your base domain and drop the namespace from the hostname template (Knative's
+default `{{.Name}}.{{.Namespace}}.{{.Domain}}` is two labels, which `*.<base-domain>` can't match):
+```bash
+kubectl --context <ctx> patch configmap/config-domain -n knative-serving --type merge \
+  -p '{"data":{"<base-domain>":""}}'                       # e.g. flyte-v2.example.com
+kubectl --context <ctx> patch configmap/config-network -n knative-serving --type merge \
+  -p '{"data":{"domain-template":"{{.Name}}.{{.Domain}}"}}'
+```
+
+**3. Expose Kourier behind the existing ALB** (reuse the same `group.name` so apps share the
+Flyte load balancer — no second LB, no extra cost). Switch the Kourier Service to `ClusterIP`
+and add an Ingress in `kourier-system` joined to that group, with a **wildcard cert** and the
+`*.<base-domain>` host. Match the group-level annotations (scheme / target-type / listen-ports /
+ssl-redirect) to the Flyte ingresses or the controller errors on conflicting group config:
+```bash
+kubectl --context <ctx> patch svc kourier -n kourier-system --type merge -p '{"spec":{"type":"ClusterIP"}}'
+```
+```yaml
+# kourier-alb-ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kourier-alb
+  namespace: kourier-system
+  annotations:
+    alb.ingress.kubernetes.io/group.name: flyte          # SAME group as the Flyte ingresses
+    alb.ingress.kubernetes.io/group.order: "-50"
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: <WILDCARD_CERT_ARN>
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/success-codes: "200,404"   # Kourier 404s an unmatched host while healthy
+spec:
+  ingressClassName: alb
+  rules:
+    - host: "*.<base-domain>"
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: kourier, port: { number: 80 } } } }
+```
+- **Wildcard cert:** request `*.<base-domain>` in ACM. ACM derives the DNS-validation CNAME from
+  the base name, so if you already validated the console's `<base-domain>` cert, the wildcard
+  reuses the **same** validation record and auto-issues — often no new DNS needed.
+- **Wildcard DNS:** add `*.<base-domain>` → the ALB DNS name (cross-account zones: a CNAME in the
+  DNS account, same as the console record).
+- (Alternative: leave the Kourier Service as `LoadBalancer` and point `*.<base-domain>` at that NLB
+  — simpler, but a second load balancer + you manage its TLS separately.)
+
+**3b. Require authentication for apps (optional but recommended).** By default any app URL is
+**public** — anyone who can reach the ALB opens it. To gate every app behind the same OIDC login
+as the console, add `authenticate-oidc` to the **`kourier-alb`** Ingress (same mechanism as the
+console's edge SSO). Three parts, all required:
+- **Annotations** on the `kourier-alb` Ingress (alongside the step-3 annotations):
+  ```yaml
+  alb.ingress.kubernetes.io/auth-type: oidc
+  alb.ingress.kubernetes.io/auth-on-unauthenticated-request: authenticate
+  alb.ingress.kubernetes.io/auth-scope: openid email profile
+  alb.ingress.kubernetes.io/auth-session-timeout: "604800"
+  alb.ingress.kubernetes.io/auth-idp-oidc: '{"issuer":"https://<idp>/oauth2/default","authorizationEndpoint":"https://<idp>/oauth2/default/v1/authorize","tokenEndpoint":"https://<idp>/oauth2/default/v1/token","userInfoEndpoint":"https://<idp>/oauth2/default/v1/userinfo","secretName":"flyte-console-oidc"}'
+  ```
+- **The OIDC Secret must exist in `kourier-system`** (the controller reads it from the Ingress's
+  own namespace). Reuse the console's client by copying the existing Secret over:
+  ```bash
+  kubectl --context <ctx> get secret flyte-console-oidc -n flyte -o json \
+    | jq '.metadata={name:"flyte-console-oidc",namespace:"kourier-system"}' \
+    | kubectl --context <ctx> apply -f -
+  ```
+- **RBAC for the controller to read it in `kourier-system`** — its Secret access is per-namespace,
+  so without a Role here the Ingress fails with `secrets "…" is forbidden`, which **stalls
+  reconciliation of the whole ALB group** (not just this Ingress — it can take the console down):
+  ```bash
+  kubectl --context <ctx> -n kourier-system create role alb-oidc-secret-reader \
+    --verb=get,list,watch --resource=secrets
+  kubectl --context <ctx> -n kourier-system create rolebinding alb-oidc-secret-reader \
+    --role=alb-oidc-secret-reader --serviceaccount=kube-system:aws-load-balancer-controller
+  ```
+- **IdP redirect URI:** ALB's callback is `https://<app-host>/oauth2/idpresponse` and every app
+  has a different hostname, so register the **wildcard** `https://*.<base-domain>/oauth2/idpresponse`
+  as a sign-in redirect URI on the OIDC app (your IdP must allow wildcard redirect URIs). Without
+  it, login dead-ends after the redirect with a `redirect_uri` error.
+
+Verify: `curl -s -o /dev/null -w '%{http_code}'` an app host → **302** to the IdP (was 200/404).
+Note this gates apps with the **cookie** flow (browser) — app-to-app/API calls would need the same
+Bearer-bypass treatment as the main API if you want programmatic access.
+
+**4. Enable the controller in Flyte values** (under `configuration.inline`), then upgrade.
+`baseDomain` MUST equal the `config-domain` from step 2 so advertised URLs match what Knative serves:
+```yaml
+configuration:
+  inline:
+    internalApps:
+      enabled: true
+      baseDomain: <base-domain>
+      scheme: https
+      ingressAppsPort: 0                 # apps sit behind the ALB on 443; omit the port
+      defaultServiceAccount: flyte       # app pods run under the IRSA'd SA (S3 access)
+```
+```bash
+helm upgrade flyte ./charts/flyte-binary -n flyte -f values-eks.yaml --kube-context <ctx>
+kubectl --context <ctx> -n flyte rollout restart deploy/flyte   # config-only change may not roll the pod
+```
+The chart auto-grants the `serving.knative.dev` RBAC when `internalApps.enabled` (flyte#7557).
+
+**5. Verify.**
+```bash
+kubectl --context <ctx> auth can-i create services.serving.knative.dev \
+  --as=system:serviceaccount:flyte:flyte -n flyte                      # => yes
+# AppService in-cluster (bypasses the ALB auth gate) — 200 + {} (NOT 404/unimplemented):
+kubectl --context <ctx> -n flyte run c --rm -i --image=curlimages/curl:8.10.1 --restart=Never -- \
+  curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  http://flyte-http.flyte:8090/flyteidl2.app.AppService/List -H 'Content-Type: application/json' -d '{}'
+# App path via ALB (before DNS, use --connect-to): wildcard TLS served + 404 from Kourier = healthy, no app yet:
+curl -s -o /dev/null -w '%{http_code}\n' --connect-to "noapp.<base-domain>:443:<alb>:443" https://noapp.<base-domain>/
+```
+The console's Apps tab now loads; deploy an app with the SDK and open
+`https://<name>-<project>-<domain>.<base-domain>`.
+
+**Gotchas:** (a) Knative version too new for your k8s → `kubectl apply` rejects the manifests;
+install an older Knative (serving + net-kourier matched). (b) Two-label app hostname → wildcard
+TLS error; confirm the single-label `domain-template`. (c) `baseDomain` ≠ `config-domain` → URLs
+Flyte advertises don't match what Knative serves. (d) **Apps are unauthenticated at the edge** —
+the Kourier ingress carries no OIDC/JWT, so app URLs are public once DNS resolves (the console
+Apps *tab* is still SSO-gated) — gate them with step 3b. (e) `List` still 404s after enabling →
+the binary didn't roll; `rollout restart`. (f) Enabling app auth without the `kourier-system`
+Secret RBAC (step 3b) → `secrets "…" is forbidden` stalls the **whole** ALB group, which can take
+the console down too — add the Role/RoleBinding before (or with) the auth annotations.
+
 ## Optional `configuration.inline` tuning
 
 Anything under `configuration.inline` is merged into the rendered Flyte config — it's how you
