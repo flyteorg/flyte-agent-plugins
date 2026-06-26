@@ -538,6 +538,43 @@ spec:
 - (Alternative: leave the Kourier Service as `LoadBalancer` and point `*.<base-domain>` at that NLB
   — simpler, but a second load balancer + you manage its TLS separately.)
 
+**3b. Require authentication for apps (optional but recommended).** By default any app URL is
+**public** — anyone who can reach the ALB opens it. To gate every app behind the same OIDC login
+as the console, add `authenticate-oidc` to the **`kourier-alb`** Ingress (same mechanism as the
+console's edge SSO). Three parts, all required:
+- **Annotations** on the `kourier-alb` Ingress (alongside the step-3 annotations):
+  ```yaml
+  alb.ingress.kubernetes.io/auth-type: oidc
+  alb.ingress.kubernetes.io/auth-on-unauthenticated-request: authenticate
+  alb.ingress.kubernetes.io/auth-scope: openid email profile
+  alb.ingress.kubernetes.io/auth-session-timeout: "604800"
+  alb.ingress.kubernetes.io/auth-idp-oidc: '{"issuer":"https://<idp>/oauth2/default","authorizationEndpoint":"https://<idp>/oauth2/default/v1/authorize","tokenEndpoint":"https://<idp>/oauth2/default/v1/token","userInfoEndpoint":"https://<idp>/oauth2/default/v1/userinfo","secretName":"flyte-console-oidc"}'
+  ```
+- **The OIDC Secret must exist in `kourier-system`** (the controller reads it from the Ingress's
+  own namespace). Reuse the console's client by copying the existing Secret over:
+  ```bash
+  kubectl --context <ctx> get secret flyte-console-oidc -n flyte -o json \
+    | jq '.metadata={name:"flyte-console-oidc",namespace:"kourier-system"}' \
+    | kubectl --context <ctx> apply -f -
+  ```
+- **RBAC for the controller to read it in `kourier-system`** — its Secret access is per-namespace,
+  so without a Role here the Ingress fails with `secrets "…" is forbidden`, which **stalls
+  reconciliation of the whole ALB group** (not just this Ingress — it can take the console down):
+  ```bash
+  kubectl --context <ctx> -n kourier-system create role alb-oidc-secret-reader \
+    --verb=get,list,watch --resource=secrets
+  kubectl --context <ctx> -n kourier-system create rolebinding alb-oidc-secret-reader \
+    --role=alb-oidc-secret-reader --serviceaccount=kube-system:aws-load-balancer-controller
+  ```
+- **IdP redirect URI:** ALB's callback is `https://<app-host>/oauth2/idpresponse` and every app
+  has a different hostname, so register the **wildcard** `https://*.<base-domain>/oauth2/idpresponse`
+  as a sign-in redirect URI on the OIDC app (your IdP must allow wildcard redirect URIs). Without
+  it, login dead-ends after the redirect with a `redirect_uri` error.
+
+Verify: `curl -s -o /dev/null -w '%{http_code}'` an app host → **302** to the IdP (was 200/404).
+Note this gates apps with the **cookie** flow (browser) — app-to-app/API calls would need the same
+Bearer-bypass treatment as the main API if you want programmatic access.
+
 **4. Enable the controller in Flyte values** (under `configuration.inline`), then upgrade.
 `baseDomain` MUST equal the `config-domain` from step 2 so advertised URLs match what Knative serves:
 ```yaml
@@ -575,8 +612,10 @@ install an older Knative (serving + net-kourier matched). (b) Two-label app host
 TLS error; confirm the single-label `domain-template`. (c) `baseDomain` ≠ `config-domain` → URLs
 Flyte advertises don't match what Knative serves. (d) **Apps are unauthenticated at the edge** —
 the Kourier ingress carries no OIDC/JWT, so app URLs are public once DNS resolves (the console
-Apps *tab* is still SSO-gated). Add ALB auth annotations to the Kourier ingress if you need apps
-gated. (e) `List` still 404s after enabling → the binary didn't roll; `rollout restart`.
+Apps *tab* is still SSO-gated) — gate them with step 3b. (e) `List` still 404s after enabling →
+the binary didn't roll; `rollout restart`. (f) Enabling app auth without the `kourier-system`
+Secret RBAC (step 3b) → `secrets "…" is forbidden` stalls the **whole** ALB group, which can take
+the console down too — add the Role/RoleBinding before (or with) the auth annotations.
 
 ## Optional `configuration.inline` tuning
 
