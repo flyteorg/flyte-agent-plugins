@@ -1,13 +1,17 @@
 ---
 name: deploy-flyte-kind
-description: Deploy a complete Flyte stack (flyte-binary + a hosted PostgreSQL + an object store) onto a local kind cluster. PostgreSQL is hosted (Supabase or external); the object store is AWS S3 or Cloudflare R2. Use when the user wants to run Flyte locally on kind — either reusing an existing kind cluster or creating a new one. For local evaluation only (no TLS/auth).
+description: Deploy a complete Flyte stack (flyte-binary + a hosted PostgreSQL + an object store) onto a kind cluster, running on the user's own machine or a DigitalOcean VM (droplet). PostgreSQL is hosted (Supabase or external); the object store is AWS S3 or Cloudflare R2. Use when the user wants to run Flyte on kind — either reusing an existing kind cluster or creating a new one. For evaluation only (no TLS/auth on the base deployment).
 ---
 
 # Deploy Flyte to a kind cluster
 
-Stand up Flyte on a local [kind](https://kind.sigs.k8s.io/) cluster: the
-flyte-binary plus a hosted PostgreSQL and an S3-compatible object store. For
-**local evaluation only** — no TLS, no auth, static credentials.
+Stand up Flyte on a [kind](https://kind.sigs.k8s.io/) cluster: the flyte-binary
+plus a hosted PostgreSQL and an S3-compatible object store. For **evaluation
+only** — no TLS, no auth, static credentials.
+
+kind runs anywhere Docker runs, so the cluster can live on the user's **own
+machine** (default) or a **DigitalOcean VM** (droplet) — the host is a choice
+made in Step 0.
 
 The PostgreSQL and object store are independent choices the user makes in Step 2:
 
@@ -17,9 +21,48 @@ The PostgreSQL and object store are independent choices the user makes in Step 2
 Both are hosted; kind runs only the flyte-binary. The user supplies connection
 details for each.
 
-## Step 0: Check prerequisites and existing cluster
+## Step 0: Choose the host, check prerequisites, and check for an existing cluster
 
-Verify the required tools, then decide whether to create a cluster or reuse one.
+**First, ask the user where kind should run** (use `AskUserQuestion`):
+
+- **the user's own machine** (default), or
+- a **DigitalOcean VM** (droplet) — the only cloud-VM host this skill supports.
+
+Do **not** offer or hand-roll AWS EC2 or GCP VM setups; for a real cloud
+deployment, point the user at the AWS deployment skill instead.
+
+If the user picks the droplet, **every `kind`, `kubectl`, and `helm` command
+below runs on the droplet** (over SSH) — only the SDK/CLI and browser run on the
+user's own machine. Provision it and install the tools there first (needs a few
+GB of headroom for kind, so ≥ 4 vCPU / 8 GB):
+
+```bash
+# create the droplet (dashboard or doctl)
+doctl compute droplet create flyte-kind \
+  --image ubuntu-24-04-x64 --size s-4vcpu-8gb --region nyc1 \
+  --ssh-keys <your-ssh-key-id>
+
+# SSH in and install Docker, kind, kubectl, helm ON the droplet
+ssh root@<droplet-ip>
+curl -fsSL https://get.docker.com | sh
+curl -Lo /usr/local/bin/kind \
+  https://github.com/kubernetes-sigs/kind/releases/latest/download/kind-linux-amd64 \
+  && chmod +x /usr/local/bin/kind
+curl -Lo /usr/local/bin/kubectl \
+  "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+  && chmod +x /usr/local/bin/kubectl
+curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+```
+
+> [!WARNING] A cloud VM is exposed to the internet
+> On a droplet the stack is reachable from the public internet. Restrict ports
+> `80`, `443`, and `22` to the user's own IP with a
+> [cloud firewall](https://docs.digitalocean.com/products/networking/firewalls/)
+> while they evaluate.
+
+Then verify the required tools **on whichever host runs kind** (run the check on
+the droplet over SSH if that's the host), and decide whether to create a cluster
+or reuse one:
 
 ```bash
 for t in docker kind kubectl helm; do command -v $t >/dev/null || echo "MISSING: $t"; done
@@ -76,6 +119,11 @@ Map both even if the user isn't sure about auth — they're harmless if auth is 
 added. **If a plain `kind create cluster --name flyte` was already made without
 these, delete it (`kind delete cluster --name flyte`) and recreate with the config
 above** — they can't be added in place.
+
+On a **DigitalOcean droplet** these mappings bind to the droplet's **public IP** —
+so in the auth section `flyte.local` points at that IP instead of `127.0.0.1`, and
+the two ports are open to the internet unless restricted by the cloud firewall (see
+the warning in Step 0).
 
 ```bash
 kubectl cluster-info --context kind-flyte
@@ -240,8 +288,19 @@ PostgreSQL — the DB isn't up yet, or the host/credentials are wrong. Check
 
 ## Step 5: Verify access
 
+Make the API reachable at `localhost:8090` on the machine where the SDK/CLI runs:
+
 ```bash
 kubectl -n flyte port-forward service/flyte-http 8090:8090
+```
+
+**On a DigitalOcean droplet** the port-forward runs on the droplet, so tunnel it
+back to the user's own machine over SSH — this one command starts the port-forward
+on the droplet *and* exposes it at `localhost:8090` locally:
+
+```bash
+ssh -L 8090:localhost:8090 root@<droplet-ip> \
+  kubectl -n flyte port-forward service/flyte-http 8090:8090
 ```
 
 In another terminal:
@@ -287,7 +346,9 @@ Only do these if the user asks.
   kind load docker-image <your-image>:<tag> --name flyte
   ```
   Reference that exact `<image>:<tag>` in task config; `IfNotPresent` pull
-  policy then uses the loaded image.
+  policy then uses the loaded image. On a **DigitalOcean droplet** the image must
+  be in the droplet's Docker daemon first — build it there, or ship it from the
+  user's machine with `docker save <image> | ssh root@<droplet-ip> docker load`.
 
 ## Add OIDC authentication via an ingress controller
 
@@ -559,9 +620,16 @@ grep -q "flyte.local" /etc/hosts && echo "present" || echo "absent"
   flyte.local" | sudo tee -a /etc/hosts` so it runs in this session), then **ask
   whether they've added it or want to skip.** If added, re-run the `grep` to
   confirm, then continue. If skip, stop here — the deployment is complete, but
-  browser login won't work until the entry exists. (`127.0.0.1` is not a
-  substitute: Traefik has no route for that host, and the OIDC issuer is
-  `flyte.local`, so login fails on an issuer mismatch.)
+  browser login won't work until the entry exists. (Opening the console by raw
+  IP is not a substitute: Traefik has no route for that host, and the OIDC issuer
+  is `flyte.local`, so login fails on an issuer mismatch.)
+
+**On a DigitalOcean droplet**, Traefik's node ports are bound to the droplet's
+**public IP**, so point `flyte.local` there in the user's **own machine's**
+`/etc/hosts` (not the droplet's) — `echo "<droplet-ip> flyte.local" | sudo tee -a
+/etc/hosts`. Every other `flyte.local` reference (Dex issuer, redirect URIs, cert
+SAN, ingress host) stays the same; only this mapping differs. Alternatively, point
+a real DNS A record at the droplet and substitute that hostname everywhere.
 
 Once present, open `http://flyte.local/v2` — Traefik bounces you through the IdP
 and back into the console.
@@ -631,6 +699,12 @@ curl -s -X POST --resolve flyte.local:443:127.0.0.1 -k \
   -H 'Content-Type: application/json' -d '{}' | head -c 120
 # → {"clientId":"flytectl", ...}   (JSON, not "Unauthorized")
 ```
+
+The `--resolve flyte.local:<port>:127.0.0.1` flags here (and in every other `curl`
+below) assume the command runs on the host running kind. **On a DigitalOcean
+droplet** that means running them in the SSH session, where `127.0.0.1` works
+as-is; to run them from the user's own machine instead, substitute the droplet's
+public IP for `127.0.0.1`.
 
 ### 5. Let the SDK/CLI authenticate (only if the user wants to submit runs)
 
@@ -752,5 +826,12 @@ for k in access_token refresh_token; do security delete-generic-password -s flyt
 kind delete cluster --name flyte
 ```
 
-Deletes the cluster and Flyte. The hosted PostgreSQL and S3/R2 bucket are
-untouched — clean those up in their own consoles.
+Deletes the cluster and Flyte. **On a DigitalOcean droplet**, also destroy the
+droplet so it stops billing:
+
+```bash
+doctl compute droplet delete flyte-kind
+```
+
+The hosted PostgreSQL and S3/R2 bucket are untouched — clean those up in their own
+consoles.

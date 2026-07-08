@@ -1,8 +1,8 @@
 # flyte-deploy-kind
 
 [Claude Code](https://docs.claude.com/en/docs/claude-code) skills for running **Flyte v2
-(`flyte-binary`) on a local [kind](https://kind.sigs.k8s.io/) cluster** — for local
-evaluation only (no production hardening).
+(`flyte-binary`) on a [kind](https://kind.sigs.k8s.io/) cluster** — on your own machine
+or a DigitalOcean VM (droplet), for evaluation only (no production hardening).
 
 kind runs only the Flyte binary; the database and object store are hosted. The skill
 collects your connection details and assembles the values file:
@@ -28,5 +28,5 @@ second skill stands up **Dex in-cluster** as a test OIDC provider.
 /plugin install flyte-deploy-kind@flyte-skills
 ```
 
-Then ask Claude to "deploy Flyte locally on kind", or invoke it directly with
-`/flyte-deploy-kind:deploy-flyte-kind`.
+Then ask Claude to "deploy Flyte on kind" (locally or on a DigitalOcean droplet), or
+invoke it directly with `/flyte-deploy-kind:deploy-flyte-kind`.
