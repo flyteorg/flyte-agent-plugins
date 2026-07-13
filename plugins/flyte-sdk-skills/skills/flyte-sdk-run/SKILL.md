@@ -1,0 +1,445 @@
+---
+name: flyte-sdk-run
+description: 'Runs Flyte 2 workflows, interacts with runs and actions, retrieves logs and data, and manages run lifecycle. Use when the user wants to run a workflow, check run status, view logs, get run outputs, re-run a workflow, or manage runs programmatically. Trigger words: "run", "execute", "logs", "status", "output", "input", "watch", "rerun", "cancel", "abort", "run metadata", "action".'
+---
+
+# Flyte 2 SDK Run Skill
+
+Run workflows, interact with runs, and manage the execution lifecycle.
+
+## Grounding References
+
+| Resource | URL |
+|---|---|
+| Official docs | https://www.union.ai/docs/v2/flyte |
+| Docs index (LLMs) | https://www.union.ai/docs/v2/flyte/llms.txt |
+| SDK API reference | https://www.union.ai/docs/v2/union/api-reference/flyte-sdk/ |
+| CLI API reference | https://www.union.ai/docs/v2/union/api-reference/flyte-cli/ |
+| flyte-sdk source | https://github.com/flyteorg/flyte-sdk |
+| Example code | https://github.com/unionai/unionai-examples |
+| Flyte MCP tools | Available via `flyte-mcp` server |
+
+## Tool Priority
+
+1. **Flyte MCP** — if available, prefer for run interaction:
+   - `flyte_mcp_list_runs` — list runs
+   - `flyte_mcp_get_run` — get run details
+   - `flyte_mcp_wait_for_run` — poll until complete
+   - `flyte_mcp_get_run_io` — get run inputs/outputs
+   - `flyte_mcp_run_task` — execute a task
+   - `flyte_mcp_abort_run` — cancel a run
+2. **`flyte` CLI** — for local run commands
+3. **Python SDK** — for programmatic run control
+
+## Running Workflows
+
+### Via Python SDK
+
+```python
+import flyte
+
+if __name__ == "__main__":
+    # Run with defaults from config
+    result = flyte.run(main, inputs={"data": ["a", "b", "c"]})
+    print(f"Run name: {result.name}")
+    print(f"Status: {result.status}")
+```
+
+### Via CLI
+
+```bash
+# Run with local config
+flyte run pipeline.py main --data '[1,2,3]'
+
+# Run with specific project/domain
+flyte run pipeline.py main --data '[1,2,3]' --project flytesnacks --domain development
+
+# Run with custom run name
+flyte run pipeline.py main --data '[1,2,3]' --name my-custom-run
+
+# Run with specific image
+flyte run pipeline.py main --data '[1,2,3]' --image ghcr.io/myorg/task:v1.0
+
+# Run with local mode (in-process, no remote)
+flyte run --local pipeline.py main --data '[1,2,3]'
+
+# Run with TUI
+flyte run --tui --local pipeline.py main --data '[1,2,3]'
+
+# Pass arguments by type
+flyte run pipeline.py main \
+  --data '[1,2,3]' \
+  --learning-rate 0.001 \
+  --batch-size 32 \
+  --train-data s3://bucket/train.parquet \
+  --flag true
+```
+
+### Run command options
+
+| Flag | Description |
+|---|---|
+| `--project` / `--domain` | Target project and domain |
+| `--run-project` / `--run-domain` | Override run project/domain |
+| `--local` | Run locally (in-process) |
+| `--tui` | Terminal UI for local runs |
+| `--name` | Custom run name |
+| `--image` | Image mapping (named or default) |
+| `--copy-style` | `loaded_modules` (default), `all`, `none` |
+| `--root-dir` | Set root directory for code bundling |
+| `--raw-data-path` | Override raw data path |
+| `--service-account` | K8s service account |
+| `--follow` | Follow run progress |
+| `--no-sync-local-sys-paths` | Skip local sys path sync |
+
+### Passing inputs by type
+
+```bash
+# List
+flyte run pipeline.py main --data '[1,2,3]'
+
+# Dict
+flyte run pipeline.py main --config '{"lr": 0.001, "epochs": 10}'
+
+# Boolean
+flyte run pipeline.py main --flag true
+
+# Datetime
+flyte run pipeline.py main --date '2025-01-01T00:00:00'
+
+# Duration
+flyte run pipeline.py main --timeout '1h'
+
+# File
+flyte run pipeline.py main --input-file s3://bucket/data.parquet
+
+# DataFrame (via file path)
+flyte run pipeline.py main --data-file /path/to/data.parquet
+```
+
+## Interacting with Runs
+
+### Using Flyte MCP
+
+```
+# List recent runs
+flyte_mcp_list_runs(task_name="<task_name>", limit=10)
+
+# Get run details
+flyte_mcp_get_run(name="<run_name>")
+
+# Wait for run to complete
+flyte_mcp_wait_for_run(name="<run_name>", poll_interval_s=5, timeout_s=3600)
+
+# Get run inputs/outputs
+flyte_mcp_get_run_io(name="<run_name>")
+```
+
+### Using CLI
+
+```bash
+# List runs
+flyte run list --project flytesnacks --domain development
+
+# Get run info
+flyte run get <run_name> --project flytesnacks --domain development
+
+# Watch run progress
+flyte run watch <run_name> --project flytesnacks --domain development
+
+# Get run outputs
+flyte run outputs <run_name> --project flytesnacks --domain development
+
+# Download run artifacts
+flyte run download <run_name> --project flytesnacks --domain development --output-dir ./artifacts
+```
+
+### Using Python SDK
+
+```python
+import flyte
+
+# Run and get handle
+result = flyte.run(main, inputs={"data": ["a", "b"]})
+
+# Check status
+print(result.status)  # RUNNING, SUCCEEDED, FAILED, CANCELED
+
+# Wait for completion
+result.wait()
+
+# Get outputs
+print(result.outputs)
+
+# Get URL in console
+print(result.url)
+```
+
+## Viewing Logs
+
+### Using CLI
+
+```bash
+# Stream logs
+flyte logs <run_name> --project flytesnacks --domain development
+
+# View logs for a specific attempt
+flyte logs <run_name> --attempt 0
+
+# Filter system logs
+flyte logs <run_name> --no-system
+
+# Scope to project/domain
+flyte logs <run_name> --project flytesnacks --domain development
+```
+
+### CLI log options
+
+| Flag | Description |
+|---|---|
+| `--attempt` | View specific attempt logs |
+| `--no-system` | Filter out system logs |
+| `--raw` | Raw output (no formatting) |
+| `--project` / `--domain` | Scope logs |
+
+### Using Python SDK
+
+```python
+import flyte
+
+result = flyte.run(main, inputs={"data": ["a"]})
+
+# Stream logs
+flyte.logs(result)
+```
+
+## Re-running Runs
+
+### CLI
+
+```bash
+# Re-run with original code and inputs
+flyte rerun <run_name> --project flytesnacks --domain development
+
+# Re-run with new local code
+flyte run --rerun-from <run_name> pipeline.py main --data '[4,5,6]'
+```
+
+### Python SDK
+
+```python
+import flyte
+
+# Re-run with new inputs
+result = flyte.run(
+    main,
+    inputs={"data": [4, 5, 6]},
+    run_context=flyte.with_runcontext(run_name="rerun-of-abc123"),
+)
+```
+
+## Running Tasks (vs Workflows)
+
+### Run a single task
+
+```bash
+# Ephemeral run (deploy + run in one command)
+flyte run pipeline.py preprocess --data '[1,2,3]'
+
+# Run a deployed task
+flyte run --task-name preprocess --project flytesnacks --domain development \
+  --inputs '{"data": "[1,2,3]"}'
+```
+
+### Using Flyte MCP
+
+```
+# Run a registered task
+flyte_mcp_run_task(
+    project="flytesnacks",
+    domain="development",
+    name="task_name",
+    version="auto",
+    inputs={"data": [1, 2, 3]}
+)
+```
+
+## Run Context Configuration
+
+### Programmatic run context
+
+```python
+import flyte
+
+# Configure a run programmatically
+result = flyte.run(
+    main,
+    inputs={"data": ["a", "b"]},
+    run_context=flyte.with_runcontext(
+        project="flytesnacks",
+        domain="development",
+        raw_data_path="s3://my-bucket/{run_id}/",
+        caching=flyte.CachingOptions(enable=True),
+        service_account="my-sa",
+    ),
+)
+```
+
+### Reading run context inside a task
+
+```python
+@env.task
+async def my_task(data: str) -> str:
+    # Access run metadata inside the task
+    ctx = flyte.ctx()
+    print(f"Run: {ctx.run_id}")
+    print(f"Project: {ctx.project}")
+    print(f"Domain: {ctx.domain}")
+    print(f"Version: {ctx.version}")
+    return data
+```
+
+## Abort and Cancel Runs
+
+### CLI
+
+```bash
+# Abort a run
+flyte abort <run_name> --project flytesnacks --domain development
+```
+
+### Python SDK
+
+```python
+import flyte
+
+result = flyte.run(main, inputs={"data": ["a"]})
+flyte.abort(result)
+```
+
+### Using Flyte MCP
+
+```
+# Abort a run
+flyte_mcp_abort_run(name="<run_name>")
+```
+
+## Programmatic Abort from Within a Task
+
+```python
+@env.task
+async def long_task(data: str) -> str:
+    import asyncio
+    import signal
+
+    async def check_abort():
+        while True:
+            if asyncio.current_task().cancelled():
+                raise asyncio.CancelledError("Run was aborted")
+            await asyncio.sleep(1)
+
+    # Start abort watcher
+    watcher = asyncio.create_task(check_abort())
+
+    try:
+        # Long-running work
+        await asyncio.sleep(3600)
+    finally:
+        watcher.cancel()
+        await watcher
+
+    return data
+```
+
+## Run Data Access
+
+### Accessing large data from cloud storage
+
+```python
+import flyte
+
+@env.task
+async def get_run_data(run_name: str) -> flyte.File:
+    """Download artifacts from a past run."""
+    # Flyte stores outputs in the metadata bucket
+    # Access via the SDK's data retrieval methods
+    ...
+
+@env.task
+async def upload_local_data(file_path: str) -> flyte.File:
+    """Upload local file to remote storage for a run."""
+    return flyte.File(path=file_path)
+```
+
+### S3 / GCS / Azure access
+
+```python
+# S3
+import boto3
+s3 = boto3.client("s3")
+obj = s3.get_object(Bucket="my-bucket", Key="run-artifacts/output.parquet")
+
+# GCS
+from google.cloud import storage
+client = storage.Client()
+bucket = client.bucket("my-bucket")
+blob = bucket.blob("run-artifacts/output.parquet")
+
+# Azure
+from azure.storage.blob import BlobServiceClient
+client = BlobServiceClient(account_url="https://myacct.blob.core.windows.net/")
+blob = client.get_blob_client(container="my-container", blob="output.parquet")
+```
+
+## Run Modes
+
+### Local execution
+
+```bash
+# In-process (no remote backend needed)
+flyte run --local pipeline.py main --data '[1,2,3]'
+
+# With TUI
+flyte run --tui --local pipeline.py main --data '[1,2,3]'
+```
+
+### Devbox
+
+```bash
+# Start local dev environment
+flyte start devbox
+
+# Create config for devbox
+flyte create config \
+    --endpoint localhost:30080 \
+    --project flytesnacks \
+    --domain development \
+    --builder local \
+    --insecure
+
+# Run on devbox
+flyte run pipeline.py main --data '[1,2,3]'
+```
+
+### Remote execution
+
+```bash
+# Create config for remote backend
+flyte create config \
+    --endpoint <host> \
+    --project flytesnacks \
+    --domain development \
+    --builder local \
+    --insecure
+
+# Run on remote backend
+flyte run pipeline.py main --data '[1,2,3]'
+```
+
+## Anti-Patterns
+
+1. **Don't confuse `flyte run` (workflow) with `flyte run --task-name` (single task)** — use the right command for your intent.
+2. **Don't skip `--follow`** when running long workflows — you won't see progress.
+3. **Don't hardcode run names** — let Flyte generate them, or use meaningful prefixes.
+4. **Don't access run data directly from S3/GCS** — use Flyte's data retrieval methods when possible.
+5. **Don't use Union-only features** — avoid `ReusePolicy` and other Union-specific APIs.

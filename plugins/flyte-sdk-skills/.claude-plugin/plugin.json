@@ -1,0 +1,8 @@
+{
+  "name": "flyte-sdk-skills",
+  "description": "Skills for Flyte 2 workflow authors — data scientists, ML/AI engineers, and data engineers. Covers project scaffolding, types/serialization, image building, evaluation, optimization, run management, app serving, agents, data engineering, and ML workloads.",
+  "version": "0.1.0",
+  "author": {
+    "name": "flyteorg"
+  }
+}
