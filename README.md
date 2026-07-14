@@ -10,6 +10,24 @@ skills for working with [Flyte](https://flyte.org).
 /plugin install <skill>@flyte-skills
 ```
 
+### Install a specific tag or commit
+
+The `flyteorg/skills` shorthand tracks the default branch. To pin the marketplace to a
+specific version, add it with the full git URL and append `#<ref>` — a tag, branch, or
+commit SHA:
+
+```
+/plugin marketplace add https://github.com/flyteorg/skills.git#<tag-or-commit>
+/plugin install <skill>@flyte-skills
+```
+
+To switch to a different version later, remove and re-add the marketplace:
+
+```
+/plugin marketplace remove flyte-skills
+/plugin marketplace add https://github.com/flyteorg/skills.git#<other-ref>
+```
+
 ## Skills
 
 | Skill | Description |

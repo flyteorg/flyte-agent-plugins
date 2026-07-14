@@ -19,6 +19,17 @@ It encodes the full runbook plus the non-obvious gotchas that break a first depl
 Then ask Claude to "deploy a Flyte v2 cluster on AWS", or invoke it directly with
 `/flyte-deploy-aws:flyte-deploy-aws`.
 
+To pin a specific version of the skills repo, add the marketplace with the full git URL
+and append `#<ref>` — a tag, branch, or commit SHA:
+
+```
+/plugin marketplace add https://github.com/flyteorg/skills.git#<tag-or-commit>
+/plugin install flyte-deploy-aws@flyte-skills
+```
+
+(To change the pinned version later, `/plugin marketplace remove flyte-skills` and re-add
+with the new ref.)
+
 ## Install (manual)
 
 Copy `skills/flyte-deploy-aws/` into your `~/.claude/skills/` directory.
