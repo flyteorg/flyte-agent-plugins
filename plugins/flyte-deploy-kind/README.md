@@ -30,3 +30,14 @@ second skill stands up **Dex in-cluster** as a test OIDC provider.
 
 Then ask Claude to "deploy Flyte on kind" (locally or on a DigitalOcean droplet), or
 invoke it directly with `/flyte-deploy-kind:deploy-flyte-kind`.
+
+To pin a specific version of the skills repo, add the marketplace with the full git URL
+and append `#<ref>` — a tag, branch, or commit SHA:
+
+```
+/plugin marketplace add https://github.com/flyteorg/skills.git#<tag-or-commit>
+/plugin install flyte-deploy-kind@flyte-skills
+```
+
+(To change the pinned version later, `/plugin marketplace remove flyte-skills` and re-add
+with the new ref.)
