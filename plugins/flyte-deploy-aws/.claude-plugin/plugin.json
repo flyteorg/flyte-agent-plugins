@@ -1,7 +1,7 @@
 {
   "name": "flyte-deploy-aws",
   "description": "Deploy a Flyte v2 (flyte-binary) cluster on AWS from scratch — EKS + S3 + RDS PostgreSQL + AWS Load Balancer Controller + helm, with optional TLS and Okta SSO.",
-  "version": "0.1.0",
+  "version": "0.0.3",
   "author": {
     "name": "flyteorg"
   }
