@@ -20,10 +20,10 @@ Then ask Claude to "deploy a Flyte v2 cluster on AWS", or invoke it directly wit
 `/flyte-deploy-aws:flyte-deploy-aws`.
 
 To pin a specific version of the skills repo, add the marketplace with the full git URL
-and append `#<ref>` — a tag, branch, or commit SHA:
+and append `#<ref>` — a tag or branch name (not a bare commit SHA; tag the commit to pin it):
 
 ```
-/plugin marketplace add https://github.com/flyteorg/skills.git#<tag-or-commit>
+/plugin marketplace add https://github.com/flyteorg/skills.git#<tag-or-branch>
 /plugin install flyte-deploy-aws@flyte-skills
 ```
 
