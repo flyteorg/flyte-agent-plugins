@@ -10,14 +10,14 @@ skills for working with [Flyte](https://flyte.org).
 /plugin install <skill>@flyte-skills
 ```
 
-### Install a specific tag or commit
+### Install a specific version
 
 The `flyteorg/skills` shorthand tracks the default branch. To pin the marketplace to a
-specific version, add it with the full git URL and append `#<ref>` — a tag, branch, or
-commit SHA:
+specific version, add it with the full git URL and append `#<ref>` — a **tag or branch
+name** (bare commit SHAs are not supported; to pin an exact commit, tag it first):
 
 ```
-/plugin marketplace add https://github.com/flyteorg/skills.git#<tag-or-commit>
+/plugin marketplace add https://github.com/flyteorg/skills.git#<tag-or-branch>
 /plugin install <skill>@flyte-skills
 ```
 

@@ -32,10 +32,10 @@ Then ask Claude to "deploy Flyte on kind" (locally or on a DigitalOcean droplet)
 invoke it directly with `/flyte-deploy-kind:deploy-flyte-kind`.
 
 To pin a specific version of the skills repo, add the marketplace with the full git URL
-and append `#<ref>` — a tag, branch, or commit SHA:
+and append `#<ref>` — a tag or branch name (not a bare commit SHA; tag the commit to pin it):
 
 ```
-/plugin marketplace add https://github.com/flyteorg/skills.git#<tag-or-commit>
+/plugin marketplace add https://github.com/flyteorg/skills.git#<tag-or-branch>
 /plugin install flyte-deploy-kind@flyte-skills
 ```
 
