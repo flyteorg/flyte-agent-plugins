@@ -41,3 +41,35 @@ and append `#<ref>` — a tag or branch name (not a bare commit SHA; tag the com
 
 (To change the pinned version later, `/plugin marketplace remove flyte-skills` and re-add
 with the new ref.)
+
+## Install (other agent harnesses)
+
+The skills are standard [Agent Skills](https://agentskills.io) (`SKILL.md`), so they also
+work with:
+
+**OpenAI Codex CLI** — add the repo as a plugin marketplace, then install via `/plugins`:
+
+```
+codex plugin marketplace add flyteorg/skills    # or --ref <tag-or-branch> to pin
+```
+
+**Hermes** — install the skills by repo path (default branch only):
+
+```
+hermes skills install flyteorg/skills/plugins/flyte-deploy-kind/skills/deploy-flyte-kind
+hermes skills install flyteorg/skills/plugins/flyte-deploy-kind/skills/deploy-flyte-kind-vm
+hermes skills install flyteorg/skills/plugins/flyte-deploy-kind/skills/start-dex-local
+```
+
+**opencode** — via the [`skills` CLI](https://github.com/vercel-labs/skills), or copy the
+skill folders into `~/.config/opencode/skills/`:
+
+```
+npx skills add flyteorg/skills          # append @<ref> to pin
+```
+
+**pi** — installs via the repo's `pi.skills` manifest:
+
+```
+pi install git:github.com/flyteorg/skills@<tag>   # or the plain https URL for default branch
+```
