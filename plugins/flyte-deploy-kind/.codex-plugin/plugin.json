@@ -1,0 +1,6 @@
+{
+  "name": "flyte-deploy-kind",
+  "version": "0.0.3",
+  "description": "Deploy a Flyte v2 (flyte-binary) cluster on kind — on your local machine or a cloud VM (DigitalOcean, AWS EC2, or GCP), backed by a hosted PostgreSQL (Supabase/external) and S3-compatible object store (AWS S3 or Cloudflare R2), with optional OIDC auth via Traefik + oauth2-proxy and an in-cluster Dex IdP for testing.",
+  "skills": "./skills/"
+}
