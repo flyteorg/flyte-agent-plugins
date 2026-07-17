@@ -212,6 +212,7 @@ fullnameOverride: flyte
 configuration:
   # << database block — Supabase/external below >>
   # << storage block — S3 or R2 below >>
+  # << inline block — task-pod storage credentials + storagePrefix, REQUIRED (below) >>
 
 serviceAccount:
   create: true
@@ -271,6 +272,50 @@ Supabase, host and username come from the **Session pooler** connection string:
         v2Signing: false
 ```
 
+### Inline block — task-pod storage credentials + storagePrefix (required)
+
+The `storage` block above configures only the **control plane**. Two more settings
+are required for tasks to actually run — without them the API works but **every task
+fails**:
+
+- **Task pods get no object-store credentials.** The task-side SDK reads static
+  credentials from the `FLYTE_AWS_ENDPOINT` / `FLYTE_AWS_ACCESS_KEY_ID` /
+  `FLYTE_AWS_SECRET_ACCESS_KEY` env vars (`flyte/storage/_config.py`); with none set
+  it falls back to the default AWS credential chain and probes the EC2 metadata
+  endpoint, so tasks fail with
+  `OSError: Generic S3 error: Error performing PUT http://169.254.169.254/latest/api/token`.
+  The chart's `storage.*` values do **not** propagate to task pods — inject the vars
+  via `plugins.k8s.default-env-vars`.
+- **Task I/O goes to a nonexistent bucket.** `runs.storagePrefix` defaults to
+  `s3://flyte-data`, so task input/output/`error.pb` writes fail with
+  `403 Forbidden AccessDenied`. It is **distinct from**
+  `metadataContainer`/`userDataContainer` (those only configure the control plane's
+  dataproxy) — point it at the real bucket.
+
+Add this under `configuration:`. **The `default-env-vars` list replaces the chart
+default outright**, so the three `_U_*` control-plane vars must be repeated — dropping
+them breaks task→control-plane callbacks:
+
+```yaml
+  inline:
+    runs:
+      storagePrefix: s3://<bucket>      # the SAME bucket as the storage block
+    plugins:
+      k8s:
+        default-env-vars:               # replaces the chart default — keep all three _U_* vars
+          - _U_EP_OVERRIDE: "flyte-http.flyte:8090"
+          - _U_INSECURE: "true"
+          - _U_USE_ACTIONS: "1"
+          - FLYTE_AWS_ACCESS_KEY_ID: "<access-key-id>"
+          - FLYTE_AWS_SECRET_ACCESS_KEY: "<secret-access-key>"
+          # Cloudflare R2 only — task pods must also be told the endpoint:
+          - FLYTE_AWS_ENDPOINT: "https://<account-id>.r2.cloudflarestorage.com"
+```
+
+For **AWS S3**, omit `FLYTE_AWS_ENDPOINT` and add the standard
+`- AWS_REGION: "<bucket-region>"` instead (the SDK's object store reads the standard
+AWS env vars for anything the `FLYTE_AWS_*` overrides don't cover).
+
 ## Step 4: Install Flyte
 
 ```bash
@@ -303,6 +348,11 @@ ssh -L 8090:localhost:8090 root@<droplet-ip> \
   kubectl -n flyte port-forward service/flyte-http 8090:8090
 ```
 
+> [!NOTE] `helm upgrade` kills this port-forward
+> Every `helm upgrade` rolls the flyte pod, which drops the `flyte-http`
+> port-forward — the SDK then reports "Flyte system is currently unavailable."
+> Restart the port-forward (and the SSH tunnel, on a droplet) after each upgrade.
+
 In another terminal:
 
 ```bash
@@ -321,7 +371,7 @@ just give them the block to apply themselves.** Use this config:
 
 ```yaml
 admin:
-  endpoint: dns:///localhost:8090   # the port-forwarded API
+  endpoint: dns:///localhost:8090   # the port-forwarded API — 8090, NOT 8080
   insecure: True                    # plain HTTP, no TLS
 task:
   org: local
@@ -331,6 +381,95 @@ task:
 
 The code-bundle upload needs no second port-forward — the S3/R2 endpoint is
 publicly resolvable, so the SDK uploads straight to the bucket.
+
+**Two different ports are in play — don't conflate them.** The SDK talks to the
+API on **`:8090`** (this port-forward), while the browser console lives on
+**`:8080`** (Step 6). The run URL that `flyte run` prints
+(`http://localhost:8080/v2/...`) is a **console** link — it only works once Step 6
+is done; it is not the API endpoint, and pointing `admin.endpoint` at `:8080`
+does not work.
+
+## Step 6: Access the web console (no auth)
+
+The base deployment leaves the console unreachable: port-forwarding
+`flyte-console` directly serves only the SPA, whose frontend calls the API at the
+**same origin** it was served from (`NEXT_PUBLIC_ADMIN_API_URL` is unset, so the
+API base URL defaults to `/`) — those calls 404 and run pages load blank. The fix
+is to put console + API behind **one origin** with Traefik.
+
+Install Traefik (identical to step 1 of the auth section — if it's already
+installed, skip this command):
+
+```bash
+helm repo add traefik https://traefik.github.io/charts
+helm repo update
+
+helm install traefik traefik/traefik -n traefik --create-namespace \
+  --kube-context kind-flyte \
+  --set "service.type=NodePort" \
+  --set "ports.web.nodePort=30080" \
+  --set "ports.websecure.nodePort=30443"
+```
+
+Route the two path groups to one origin — `flyteidl2.*` (the Connect API, over
+h2c) to `flyte-http`, everything else to the console:
+
+```bash
+kubectl --context kind-flyte apply -f - <<'EOF'
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: flyte-api-noauth
+  namespace: flyte
+spec:
+  entryPoints: [web]
+  routes:
+    - kind: Rule
+      priority: 100
+      match: PathPrefix(`/flyteidl2.`)
+      services:
+        - name: flyte-http
+          port: 8090
+          scheme: h2c        # gRPC/Connect over cleartext HTTP/2
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: flyte-console-noauth
+  namespace: flyte
+spec:
+  entryPoints: [web]
+  routes:
+    - kind: Rule
+      priority: 10
+      match: PathPrefix(`/`)
+      services:
+        - name: flyte-console
+          port: 80
+EOF
+```
+
+Then open the console:
+
+- **Local machine** — forward Traefik to **8080** (this makes the
+  `http://localhost:8080/v2/...` run URLs the SDK prints work as-is):
+  ```bash
+  kubectl -n traefik --context kind-flyte port-forward service/traefik 8080:80
+  ```
+  Open `http://localhost:8080/v2`. (Alternatively, the Step 1 host-port mapping
+  already exposes Traefik at `http://localhost/v2` with no port-forward — but the
+  SDK's printed run URLs still say `:8080`.)
+- **DigitalOcean droplet** — the Step 1 mapping binds host port 80 on the
+  droplet's public IP, so the console is directly at **`http://<droplet-ip>/v2`**
+  (the Step 0 firewall scopes it to the user's IP). Or tunnel it:
+  `ssh -N -L 8080:localhost:80 root@<droplet-ip>` → `http://localhost:8080/v2`.
+  Note the SDK still prints run URLs as `http://localhost:8080/...` — swap
+  `localhost:8080` for `<droplet-ip>` unless the tunnel is up.
+
+These routes carry **no auth** — they're the evaluation-mode front door. If the
+user later enables the auth section, **delete them first**
+(`kubectl -n flyte delete ingressroute flyte-api-noauth flyte-console-noauth`);
+they match any host at low priority and would otherwise bypass the OIDC gate.
 
 Now **ask the user whether they want to add OIDC authentication.** The base
 deployment has no auth — anyone with network access can reach the API. If they
@@ -352,7 +491,7 @@ Only do these if the user asks.
 
 ## Add OIDC authentication via an ingress controller
 
-Do this when the user opts in at the Step 5 prompt (or asks later). This adds
+Do this when the user opts in at the Step 6 prompt (or asks later). This adds
 OIDC single sign-on at the edge, the kind equivalent of gating the cloud
 console behind an ALB.
 
@@ -405,6 +544,14 @@ helm install traefik traefik/traefik -n traefik --create-namespace \
 
 Installs the `Middleware` CRD, registers a `traefik` IngressClass, and serves a
 default self-signed cert on `websecure` — fine for the browser.
+
+**If Traefik is already installed from Step 6**, skip the install but **delete
+the no-auth routes** — they match any host at low priority and would bypass the
+OIDC gate added below:
+
+```bash
+kubectl -n flyte --context kind-flyte delete ingressroute flyte-api-noauth flyte-console-noauth
+```
 
 #### Replace the default cert with one for `flyte.local` (only if SDK auth)
 
@@ -819,6 +966,127 @@ for k in access_token refresh_token; do security delete-generic-password -s flyt
 - `403 Forbidden` on `SelectCluster`, **no browser** (oauth2-proxy logs `failed to verify id token signature`) → stale cached token; Dex's in-memory keys changed on restart. Clear the keyring tokens (block above) and rerun.
 - `GetOAuth2Metadata` 404 `oauth-authorization-server` → in-cluster IdP: well-known rewrite missing.
 - `GetOAuth2Metadata` times out → in-cluster IdP: `hostAliases` missing on the Flyte pod.
+
+## Enable app serving (optional — Knative + Kourier)
+
+Flyte can host long-running **apps** (web services, dashboards, model servers —
+deployed via the SDK), each published at `{name}-{project}-{domain}.<base-domain>`.
+It's **off by default**: the binary always exposes `AppService`, but with no
+controller behind it the console's Apps tab and any `flyteidl2.app.AppService/List`
+call return `{"code":"unimplemented","message":"404 Not Found"}` until enabled.
+Apps run as **Knative Services**, so Knative Serving + a Knative networking layer
+(Kourier) must be installed first. Skip this section unless the user wants apps.
+Official doc: https://www.union.ai/docs/v2/flyte/oss-deployment/app-serving/.
+
+On kind there's no cloud load balancer and no real DNS, so this recipe uses
+**[sslip.io](https://sslip.io) wildcard DNS** (any `X.127.0.0.1.sslip.io` resolves
+to `127.0.0.1`; any `X.<droplet-ip>.sslip.io` to the droplet — `/etc/hosts` can't
+do wildcards, and every app gets its own hostname) and routes app traffic through
+**Traefik** on the existing host-port-80 mapping. It requires Traefik from Step 6
+(or the auth section).
+
+**1. Install Knative Serving + Kourier.** Pick a Knative release that supports the
+cluster's k8s version (Knative supports only the most recent k8s minors — the
+pinned version below may need bumping), and use the **same version** for serving
+and net-kourier:
+
+```bash
+KV=knative-v1.22.1   # must support your k8s version; serving + net-kourier must match
+kubectl --context kind-flyte apply -f https://github.com/knative/serving/releases/download/$KV/serving-crds.yaml
+kubectl --context kind-flyte apply -f https://github.com/knative/serving/releases/download/$KV/serving-core.yaml
+kubectl --context kind-flyte apply -f https://github.com/knative-extensions/net-kourier/releases/download/$KV/kourier.yaml
+kubectl --context kind-flyte patch configmap/config-network -n knative-serving --type merge \
+  -p '{"data":{"ingress-class":"kourier.ingress.networking.knative.dev"}}'
+kubectl --context kind-flyte wait --for=condition=Available deploy --all -n knative-serving --timeout=180s
+kubectl --context kind-flyte wait --for=condition=Available deploy --all -n kourier-system --timeout=180s
+```
+
+If `kubectl apply` rejects the manifests, the Knative release is newer than the
+cluster's k8s version supports — install an older one (serving + net-kourier
+matched).
+
+**2. Configure the apps domain.** Base domain = `127.0.0.1.sslip.io` locally, or
+`<droplet-ip>.sslip.io` on a droplet. Drop the namespace from Knative's hostname
+template so each app is a **single label** under the base domain (the default
+`{{.Name}}.{{.Namespace}}.{{.Domain}}` is two labels):
+
+```bash
+BASE=127.0.0.1.sslip.io   # droplet: <droplet-ip>.sslip.io
+kubectl --context kind-flyte patch configmap/config-domain -n knative-serving --type merge \
+  -p "{\"data\":{\"$BASE\":\"\"}}"
+kubectl --context kind-flyte patch configmap/config-network -n knative-serving --type merge \
+  -p '{"data":{"domain-template":"{{.Name}}.{{.Domain}}"}}'
+```
+
+**3. Route app hostnames through Traefik.** Kourier's `kourier` Service is
+`LoadBalancer` type, which stays `<pending>` forever on kind — switch it to
+`ClusterIP` and front it with an IngressRoute that matches any sslip.io app host.
+The higher priority (150) wins over the Step 6 no-auth routes for app hosts;
+`localhost`/`flyte.local` traffic is untouched:
+
+```bash
+kubectl --context kind-flyte patch svc kourier -n kourier-system --type merge -p '{"spec":{"type":"ClusterIP"}}'
+kubectl --context kind-flyte apply -f - <<EOF
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: kourier-apps
+  namespace: kourier-system
+spec:
+  entryPoints: [web]
+  routes:
+    - kind: Rule
+      priority: 150
+      match: HostRegexp(\`^.+\.${BASE//./\\.}$\`)
+      services:
+        - name: kourier
+          port: 80
+EOF
+```
+
+**4. Enable the app controller in Flyte.** Add to `values-local.yaml` under the
+existing `configuration.inline` block — `baseDomain` MUST equal the
+`config-domain` from step 2:
+
+```yaml
+    internalApps:
+      enabled: true
+      baseDomain: 127.0.0.1.sslip.io   # droplet: <droplet-ip>.sslip.io
+      scheme: http                     # plain HTTP through Traefik (evaluation)
+      ingressAppsPort: 0               # apps ride host port 80; omit the port
+```
+
+```bash
+helm upgrade flyte flyteorg/flyte-binary -n flyte --kube-context kind-flyte -f values-local.yaml
+kubectl -n flyte --context kind-flyte rollout status deploy/flyte
+```
+
+The chart auto-grants the `serving.knative.dev` RBAC when `internalApps.enabled`.
+The upgrade rolls the flyte pod, so **restart the `flyte-http` port-forward**
+(Step 5) afterward.
+
+**5. Verify.**
+
+```bash
+kubectl --context kind-flyte auth can-i create services.serving.knative.dev \
+  --as=system:serviceaccount:flyte:flyte -n flyte          # => yes
+# AppService now answers 200 + {} (NOT 404/unimplemented) — needs the Step 5 port-forward:
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  http://localhost:8090/flyteidl2.app.AppService/List \
+  -H 'Content-Type: application/json' -d '{}'              # => 200
+```
+
+The console's Apps tab now loads. Deploy an app with the SDK and open
+`http://<name>-<project>-<domain>.<base-domain>/` (sslip.io needs internet DNS;
+on a droplet the Step 0 firewall scopes port 80 to the user's IP).
+
+**Gotchas:** (a) Knative version too new for the k8s version → manifests rejected
+on apply. (b) two-label app hostnames → confirm the single-label
+`domain-template`. (c) `baseDomain` ≠ `config-domain` → the URLs Flyte advertises
+don't match what Knative serves. (d) `List` still 404s after enabling → the
+binary didn't roll; `kubectl -n flyte rollout restart deploy/flyte`. (e) apps are
+**unauthenticated** — anyone who can reach port 80 can open them (locally that's
+just the machine; on a droplet, whatever the firewall admits).
 
 ## Tear down
 

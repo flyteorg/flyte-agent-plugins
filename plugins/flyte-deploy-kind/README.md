@@ -17,7 +17,8 @@ second skill stands up **Dex in-cluster** as a test OIDC provider.
 ## Skills
 
 - **`deploy-flyte-kind`** — create/reuse the kind cluster, wire up the hosted DB and
-  object store, install `flyte-binary`, and optionally add OIDC auth.
+  object store, install `flyte-binary`, expose the web console (Traefik unified
+  origin), and optionally add OIDC auth and app serving (Knative + Kourier).
 - **`start-dex-local`** — deploy Dex as a local in-cluster OIDC provider, invoked by the
   kind skill when you pick Dex for auth.
 
