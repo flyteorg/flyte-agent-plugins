@@ -68,6 +68,16 @@ helm.
 
 ### DigitalOcean
 
+Setting up `doctl` if it's missing or unauthenticated (`brew install doctl` on
+macOS): auth is interactive by default, but if the user pastes an API token it
+can be done non-interactively with `doctl auth init -t <token>`. The SSH key must
+be **imported to DigitalOcean** before it can be passed to `droplet create`:
+
+```bash
+doctl compute ssh-key list                 # already imported? use its ID below
+doctl compute ssh-key import <name> --public-key-file ~/.ssh/id_ed25519.pub   # prints the ID
+```
+
 ```bash
 # Create the Droplet (ask the user for their SSH key ID: `doctl compute ssh-key list`)
 doctl compute droplet create flyte-kind \
@@ -191,8 +201,15 @@ covers, in order:
    connection details (they can paste a screenshot). Follow that skill's guidance
    exactly — especially Supabase's **session pooler** requirement (kind is IPv4-only).
 4. **Write `values-local.yaml`** and **`helm install`** the flyte-binary chart.
-5. **Optional OIDC auth** via Traefik + oauth2-proxy (and the `start-dex-local`
+   Don't skip that skill's **inline block** (task-pod `FLYTE_AWS_*` credentials +
+   `runs.storagePrefix`) — without it the API works but every task fails.
+5. **Web console access** (Step 6 there) — Traefik + the two unified-origin
+   routes. See Step 4 below for the VM-specific ways to reach it.
+6. **Optional OIDC auth** via Traefik + oauth2-proxy (and the `start-dex-local`
    skill for an in-cluster Dex IdP).
+7. **Optional app serving** (Knative + Kourier) — that skill's "Enable app
+   serving" section. On a cloud VM the apps base domain is `<vm-ip>.sslip.io`,
+   and apps are served directly on port 80 (firewall-scoped to the user's IP).
 
 **When on a cloud VM, apply the Step 2 wrapper to every command in that skill** —
 create the values/config files on the VM (write them via the piped heredoc, or
@@ -225,6 +242,12 @@ gcloud compute ssh flyte-kind --zone <your-zone> \
   --command="kubectl -n flyte port-forward service/flyte-http 8090:8090"
 ```
 
+> [!WARNING] Do NOT add `-N` to these tunnel commands
+> These tunnels run `kubectl port-forward` as the SSH **remote command**, and
+> `-N` tells SSH to skip the remote command — the forward never starts and every
+> connection gets `connection refused`. `-N` is right only for a pure tunnel with
+> no remote command (like the console tunnel below).
+
 Keep it running. Verify from your machine (a JSON response, not a connection
 error, confirms Flyte is up and talking to its database):
 
@@ -237,9 +260,40 @@ Then point the SDK at it — the `deploy-flyte-kind` "Verify access" step has th
 `~/.flyte/config.yaml` block (`endpoint: dns:///localhost:8090`, `insecure: True`).
 The tunnel makes the VM deploy behave exactly like a local one for the SDK. The
 code-bundle upload needs no second tunnel — the S3/R2 endpoint is publicly
-resolvable, so the SDK uploads to the presigned URL directly.
+resolvable, so the SDK uploads to the presigned URL directly. Note `helm upgrade`
+rolls the flyte pod and **drops this tunnel's port-forward** — restart it after
+each upgrade.
 
-> If you enable **auth** (Step 3.5), the SDK reaches Flyte at `https://flyte.local`
+### Console + tunnel-free SDK access from a VM (no auth)
+
+Once Traefik + the two unified-origin routes from `deploy-flyte-kind` **Step 6**
+are installed (run those commands on the VM), the kind host-port mapping
+(`30080 → 80`) binds Traefik to the VM's **public IP**, and both browser and SDK
+can skip the tunnels entirely — the Step 1 firewall already scopes port 80 to the
+user's IP:
+
+- **Console** — directly at **`http://<vm-ip>/v2`**, no tunnel. Or tunnel it
+  (note this pure tunnel **does** want `-N` — there's no remote command):
+  ```bash
+  ssh -N -L 8080:localhost:80 root@<vm-ip>     # then open http://localhost:8080/v2
+  ```
+- **SDK, tunnel-free** — gRPC rides Traefik's `web` entrypoint over h2c on
+  port 80, so the SDK can point straight at the VM:
+  ```yaml
+  # .flyte/config.yaml
+  admin:
+    endpoint: dns:///<vm-ip>:80
+    insecure: true
+  ```
+  Lower-friction than the Step 4 tunnel (nothing to keep running, survives helm
+  upgrades), with the caveat that it's **plain HTTP over the public internet** —
+  acceptable for evaluation only because the firewall admits just the user's IP.
+- **Run-URL host mismatch** — `flyte run` prints
+  `URL: http://localhost:8080/v2/...` regardless of where Flyte runs. On a VM
+  those links are dead as printed: either keep the `-N` console tunnel above on
+  port 8080 so they work as-is, or swap `localhost:8080` for `<vm-ip>`.
+
+> If you enable **auth** (Step 3.6), the SDK reaches Flyte at `https://flyte.local`
 > over the `443` mapping, not this port-forward. On a cloud VM, `flyte.local` must
 > resolve to the **VM's public IP** in your local `/etc/hosts` (not `127.0.0.1`),
 > and inbound 443 must be open to your IP (Step 1). Otherwise the auth flow is

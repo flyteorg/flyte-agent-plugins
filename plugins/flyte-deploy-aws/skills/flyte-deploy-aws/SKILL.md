@@ -534,7 +534,7 @@ Flyte v2 can host long-running **apps** (deployed via the SDK), each published a
 until you enable it. Apps run as **Knative Services**, so this needs Knative Serving + a Knative
 networking layer (Kourier) installed first — your cloud's ALB controller can't be Knative's
 networking layer. Skip this section unless the user wants apps. Official doc:
-https://flyte.org (Deployment → App serving).
+https://www.union.ai/docs/v2/flyte/oss-deployment/app-serving/.
 
 **1. Install Knative Serving + Kourier.** Pick a Knative release that supports your cluster's
 k8s version — Knative only supports the most recent k8s minors, so the upstream doc's pinned
