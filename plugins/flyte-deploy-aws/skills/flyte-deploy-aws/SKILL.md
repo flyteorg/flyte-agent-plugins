@@ -14,17 +14,19 @@ The chart does NOT provision infrastructure. Stand up four things first:
 controller.** This skill does all four with `eksctl` + `aws` + `helm`, then installs the
 `flyte-binary` chart (the v2 chart; defaults to `flyte-binary-v2` + `flyteconsole-v2`).
 
-**Get the chart first.** Every `helm`/`kubectl` command below references the local chart path
-`./charts/flyte-binary` (including the TaskAction CRD at
-`./charts/flyte-binary/templates/crds/flyte.org_taskactions.yaml`), so clone the flyte repo and
-run the rest from its root:
+**Get the chart first.** Install from the published Helm repo — this is what the official
+docs do, and the released chart pins the Flyte image tag to the chart version (see Image
+selection in Step 5). Also `helm pull --untar` a local copy so the TaskAction CRD file is on
+disk for the Step 5 idempotency check:
 ```bash
-git clone https://github.com/flyteorg/flyte && cd flyte   # ./charts/flyte-binary now resolves
+helm repo add flyteorg https://flyteorg.github.io/flyte && helm repo update
+helm pull flyteorg/flyte-binary --untar   # ./flyte-binary/templates/crds/flyte.org_taskactions.yaml now resolves
 ```
-(Alternatively `helm repo add flyteorg https://flyteorg.github.io/flyte && helm repo update` and
-install `flyteorg/flyte-binary` — but then you have no local CRD file, so fetch the CRD from the
-repo for the Step 5 idempotency check. The clone is simpler; prefer it.) Official docs:
-https://flyte.org (Deployment → Flyte deployment → Installing Flyte). Validated end-to-end on EKS.
+(Alternatively clone the repo — `git clone https://github.com/flyteorg/flyte` — and install
+from the local `./charts/flyte-binary` path for the bleeding-edge chart; its default image tag
+is a floating `:latest`, so pair it with `pullPolicy: Always` — see Image selection.) Official
+docs: https://www.union.ai/docs/v2/flyte/oss-deployment/aws-deployment/. Validated end-to-end
+on EKS.
 
 > Replace every placeholder in angle brackets and the example hostnames/IDs with your own.
 
@@ -246,10 +248,8 @@ output prefix defaults to a nonexistent `s3://flyte-data` — override `storageP
 fullnameOverride: flyte
 flyte-core-components:
   runs: { storagePrefix: "s3://BUCKET" }   # under `runs`, NOT `runs.server` (else ignored)
-deployment:
-  image: { pullPolicy: Always }   # :latest is floating + CI-synced — re-pull on (re)start
-console:
-  image: { pullPolicy: Always }
+# no image override needed: the repo chart pins its image tag to the chart version
+# (only the git-main chart floats `:latest` — see Image selection below)
 configuration:
   database:
     postgres:
@@ -285,8 +285,8 @@ For **TLS**: add `certificate-arn`, `listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
 See the TLS section below — works even when DNS lives in a different AWS account.
 
 ```bash
-helm install flyte ./charts/flyte-binary -n flyte --create-namespace -f values-eks.yaml --dry-run  # check
-helm install flyte ./charts/flyte-binary -n flyte --create-namespace -f values-eks.yaml
+helm install flyte flyteorg/flyte-binary -n flyte --create-namespace -f values-eks.yaml --dry-run  # check
+helm install flyte flyteorg/flyte-binary -n flyte --create-namespace -f values-eks.yaml
 kubectl -n flyte get pods   # flyte stuck Init:0/1 => wait-for-db can't reach RDS (see gotchas)
 ```
 
@@ -296,7 +296,7 @@ loops `Failed to watch ... taskactions.flyte.org` and every run sticks at "queue
 Make it idempotent at the end of every deploy:
 ```bash
 kubectl --context <ctx> get crd taskactions.flyte.org >/dev/null 2>&1 \
-  || kubectl --context <ctx> apply -f ./charts/flyte-binary/templates/crds/flyte.org_taskactions.yaml
+  || kubectl --context <ctx> apply -f ./flyte-binary/templates/crds/flyte.org_taskactions.yaml   # from `helm pull --untar`
 kubectl --context <ctx> get crd taskactions.flyte.org -o jsonpath='{.status.conditions[?(@.type=="Established")].status}'  # => True
 # Pre-existing CRD blocks helm adopt? patch ownership, then (re)install:
 #   kubectl annotate crd taskactions.flyte.org meta.helm.sh/release-name=flyte meta.helm.sh/release-namespace=flyte --overwrite
@@ -307,11 +307,14 @@ missing it (the watch won't retry a resource that 404'd at boot). On a normal in
 creates the CRD before the pod is Ready, so the watch establishes on first boot — don't restart
 reflexively, it's a wasted second rollout (+ image re-pull on a floating tag).
 
-**Image selection.** The chart default `cr.flyte.org/flyteorg/flyte-binary-v2:latest`
-(+ `ghcr.io/unionai-oss/flyteconsole-v2:latest`) is fine for a normal deploy — Flyte CI now
-pushes `:latest` on every merge to `main`, so its code and the DB migrations it runs are always
-in sync. No image override is needed; just set `pullPolicy: Always` so a restart picks up the
-current build:
+**Image selection.** The published repo chart (what the official docs install) **pins the
+Flyte image tag to the chart version** — e.g. chart `v2.0.27` runs
+`cr.flyte.org/flyteorg/flyte-binary-v2:v2.0.27` — plus console
+`ghcr.io/unionai-oss/flyteconsole-v2:latest`, all with the default `pullPolicy: IfNotPresent`.
+No image override is needed: the binary and the DB migrations it runs ship as a matched pair,
+and upgrading is `helm repo update && helm upgrade` (a new chart brings its new pinned image).
+Only the **git-main chart** (local `./charts/flyte-binary` from a clone) still defaults to a
+floating `:latest`, which CI pushes on every merge to `main`. If you deploy that one, set:
 ```yaml
 deployment:
   image:
@@ -322,11 +325,11 @@ console:
 ```
 With a floating tag, `kubectl rollout restart deploy/flyte -n flyte` forces a fresh pull (the
 wait-for-db init container uses a fixed `postgres` tag — leave it `IfNotPresent`). **For a timed
-demo or a reproducible deploy, pin a digest** (`repository@sha256:…`) + `pullPolicy: IfNotPresent`
-so the layer already on the node is reused and the build can't shift under you. The image and the
-schema are a matched pair (the binary owns its migrations), so if you ever pin/roll *back* to an
-older image against a DB a newer one migrated, you can hit the schema-mismatch error in gotcha 9 —
-a non-issue on a normal `:latest` deploy.
+demo, a digest pin** (`repository@sha256:…`) + `pullPolicy: IfNotPresent` is stricter still —
+the layer already on the node is reused and the build can't shift under you. The image and the
+schema are a matched pair (the binary owns its migrations), so running an *older* image against
+a DB a *newer* one migrated (rolled back, or switched from `:latest` to the pinned repo chart)
+can hit the schema-mismatch error in gotcha 9 — a non-issue on a fresh DB.
 
 ## Step 6 — Verify
 
@@ -649,7 +652,7 @@ configuration:
       defaultServiceAccount: flyte       # app pods run under the IRSA'd SA (S3 access)
 ```
 ```bash
-helm upgrade flyte ./charts/flyte-binary -n flyte -f values-eks.yaml --kube-context <ctx>
+helm upgrade flyte flyteorg/flyte-binary -n flyte -f values-eks.yaml --kube-context <ctx>
 kubectl --context <ctx> -n flyte rollout restart deploy/flyte   # config-only change may not roll the pod
 ```
 The chart auto-grants the `serving.knative.dev` RBAC when `internalApps.enabled` (flyte#7557).
@@ -883,7 +886,7 @@ aws iam delete-policy --policy-arn arn:aws:iam::$ACCT:policy/AWSLoadBalancerCont
    serves and the ALB still 302s, so check the *binary* pod, not just the URL). Same root cause,
    same fix:
    ```bash
-   kubectl --context <ctx> apply -f charts/flyte-binary/templates/crds/flyte.org_taskactions.yaml
+   kubectl --context <ctx> apply -f ./flyte-binary/templates/crds/flyte.org_taskactions.yaml   # from `helm pull --untar`
    kubectl --context <ctx> -n flyte rollout restart deploy/flyte   # re-establish the watch
    ```
    A normal `helm uninstall` → `helm install` cycle mostly self-heals: uninstall deletes the CRD,
@@ -908,10 +911,11 @@ aws iam delete-policy --policy-arn arn:aws:iam::$ACCT:policy/AWSLoadBalancerCont
    `{"code":"internal","message":"failed to list actions: missing destination name created_by in *[]*models.Action"}`
    (the column varies — `created_by`, `executed_by`, …). **Root cause: the binary image and the DB
    schema disagree** — the `actions` table has a column the running `models.Action` struct can't
-   scan, i.e. the schema was migrated by a *different* image than the one running. A normal `:latest`
-   deploy on a fresh DB won't hit this (CI keeps `:latest` and its migrations in sync). It shows up
-   when you **reuse a DB that a newer/feature-branch image migrated** and then run an older image
-   against it (e.g. pinned a digest, or rolled back). Diagnose, then make the schema match the image —
+   scan, i.e. the schema was migrated by a *different* image than the one running. A deploy on a
+   fresh DB won't hit this (any image — the pinned repo-chart tag or `:latest` — migrates its own
+   schema). It shows up when you **reuse a DB that a newer/feature-branch image migrated** and then
+   run an older image against it (e.g. rolled back, pinned a digest, or switched from a `:latest`
+   deploy to the older pinned repo-chart image). Diagnose, then make the schema match the image —
    on a fresh/disposable DB just let the running image re-migrate from scratch:
    ```bash
    # see the extra columns the DB has, and check there's no run data worth keeping:
