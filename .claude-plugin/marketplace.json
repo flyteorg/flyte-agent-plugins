@@ -15,6 +15,11 @@
       "name": "flyte-deploy-kind",
       "source": "./plugins/flyte-deploy-kind",
       "description": "Deploy a Flyte v2 (flyte-binary) cluster on kind — on your local machine or a cloud VM (DigitalOcean, AWS EC2, or GCP), backed by a hosted PostgreSQL (Supabase/external) and object store (S3/R2), with optional OIDC auth via Traefik + oauth2-proxy and an in-cluster Dex IdP."
+    },
+    {
+      "name": "flyte-sdk-skills",
+      "source": "./plugins/flyte-sdk-skills",
+      "description": "Skills for Flyte 2 workflow authors — data scientists, ML/AI engineers, and data engineers. Covers project scaffolding, types/serialization, image building, evaluation, optimization, run management, app serving, agents, data engineering, and ML workloads."
     }
   ]
 }
