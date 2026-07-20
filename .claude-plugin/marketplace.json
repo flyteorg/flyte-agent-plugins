@@ -2,24 +2,14 @@
   "name": "flyte-skills",
   "owner": {
     "name": "flyteorg",
-    "url": "https://github.com/flyteorg/skills"
+    "url": "https://github.com/flyteorg/flyte-agent-plugins"
   },
   "description": "Claude Code skills for working with Flyte.",
   "plugins": [
     {
-      "name": "flyte-deploy-aws",
-      "source": "./plugins/flyte-deploy-aws",
-      "description": "Deploy a Flyte v2 (flyte-binary) cluster on AWS from scratch — EKS + S3 + RDS PostgreSQL + AWS Load Balancer Controller + helm, with optional TLS and Okta SSO."
-    },
-    {
-      "name": "flyte-deploy-kind",
-      "source": "./plugins/flyte-deploy-kind",
-      "description": "Deploy a Flyte v2 (flyte-binary) cluster on kind — on your local machine or a cloud VM (DigitalOcean, AWS EC2, or GCP), backed by a hosted PostgreSQL (Supabase/external) and object store (S3/R2), with optional OIDC auth via Traefik + oauth2-proxy and an in-cluster Dex IdP."
-    },
-    {
-      "name": "flyte-sdk-skills",
-      "source": "./plugins/flyte-sdk-skills",
-      "description": "Skills for Flyte 2 workflow authors — data scientists, ML/AI engineers, and data engineers. Covers project scaffolding, types/serialization, image building, evaluation, optimization, run management, app serving, agents, data engineering, and ML workloads."
+      "name": "flyte-skills",
+      "source": "./plugins/flyte-skills",
+      "description": "Skills for working with Flyte 2 — deploy Flyte v2 (flyte-binary) clusters on AWS or kind, and author, run, and operate Flyte workflows, apps, agents, data, and ML workloads with the SDK."
     }
   ]
 }

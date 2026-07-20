@@ -6,8 +6,7 @@
   "keywords": ["pi-package"],
   "pi": {
     "skills": [
-      "./plugins/flyte-deploy-aws/skills",
-      "./plugins/flyte-deploy-kind/skills"
+      "./plugins/flyte-skills/skills"
     ]
   }
 }
