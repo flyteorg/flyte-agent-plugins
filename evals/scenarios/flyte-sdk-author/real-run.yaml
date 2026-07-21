@@ -1,0 +1,27 @@
+id: sdk-author-real-run
+skill: flyte-sdk-author
+tier: real
+control: false
+harnesses: [opencode]
+prompt: |
+  Scaffold a minimal Flyte 2 workflow file `workflow.py` with a single @env.task
+  `greet(name: str) -> str` that returns "hello <name>", plus a `main(name: str)`
+  workflow that calls it. Use flyte.TaskEnvironment. Do not run it.
+setup:
+  workspace: empty
+checks:
+  - kind: file_glob
+    glob: "workflow.py"
+  - kind: python_parses
+    file_glob: "*.py"
+real_run:
+  flyte_run: true
+  entrypoint: "workflow.py main"
+  inputs: {name: "world"}
+  expect_status: SUCCEEDED
+judge:
+  rubric: |
+    correctness: is workflow.py a runnable Flyte 2 workflow with a greet task and a
+    main workflow wired correctly? skill_adherence: uses TaskEnvironment + @env.task.
+  weights: {correctness: 0.6, skill_adherence: 0.4}
+  pass_threshold: 0.7

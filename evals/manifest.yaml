@@ -1,0 +1,39 @@
+# Top-level configuration for the flyte-skills eval harness.
+# Scenario -> skill mapping is derived by scanning `scenarios_dir`; each scenario
+# file declares its own `skill`. This manifest holds the cross-cutting config.
+
+# Full harness matrix. A scenario may narrow this via its own `harnesses:` list.
+harnesses: [opencode, pi, hermes]
+
+# Tiers run by default in PR CI. The nightly cron adds `real`.
+default_tiers: [static, trajectory]
+
+# Where scenario specs live (relative to repo root) and how to find a skill dir.
+scenarios_dir: evals/scenarios
+skill_dir_template: "plugins/flyte-skills/skills/{skill}"
+
+# Changing any of these paths means the ENGINE changed -> run the whole suite,
+# not just the scenarios for a changed skill (see evals/select.py).
+shared_infra_globs:
+  - "evals/harness/**"
+  - "evals/workflows/**"
+  - "evals/select.py"
+  - "evals/report.py"
+  - "evals/manifest.yaml"
+  - "evals/pyproject.toml"
+  - "plugins/flyte-skills/.claude-plugin/**"
+  - "plugins/flyte-skills/.codex-plugin/**"
+
+# Deploy skills that get a REAL kind-in-Docker smoke test on a privileged
+# GitHub Actions runner (see evals/kind_smoke/run.sh). All other deploy skills
+# are trajectory-only (agent output judged, no infra stood up).
+kind_smoke_skills:
+  - deploy-flyte-kind
+  - start-dex-local
+
+# SDK skills whose `tier: real` scenarios actually `flyte run` on demo.hosted.
+sdk_real_skills:
+  - flyte-sdk-author
+  - flyte-sdk-run
+  - flyte-sdk-data
+  - flyte-sdk-eval

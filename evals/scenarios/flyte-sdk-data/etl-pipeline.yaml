@@ -1,0 +1,29 @@
+id: sdk-data-etl-pipeline
+skill: flyte-sdk-data
+tier: trajectory
+control: true
+prompt: |
+  Write a Flyte 2 ETL pipeline in `etl.py`: a task that reads a CSV into a
+  DataFrame, a task that filters rows and adds a derived column, and a task that
+  writes Parquet. Wire them into a `main` workflow. Use flyte.TaskEnvironment and
+  proper Flyte types for the DataFrame/File I/O. Do not run it.
+setup:
+  workspace: empty
+checks:
+  - kind: file_glob
+    glob: "etl.py"
+  - kind: python_parses
+    file_glob: "*.py"
+  - kind: python_imports
+    module: flyte
+    file_glob: "*.py"
+  - kind: contains_regex
+    file_glob: "*.py"
+    pattern: "@\\w+\\.task"
+judge:
+  rubric: |
+    correctness: three wired tasks (read CSV -> transform -> write Parquet) in a
+    runnable workflow. skill_adherence: uses Flyte types for DataFrame/File I/O per
+    the flyte-sdk-data skill, not ad-hoc file paths. idiomatic: sensible typing.
+  weights: {correctness: 0.5, skill_adherence: 0.3, idiomatic: 0.2}
+  pass_threshold: 0.7
