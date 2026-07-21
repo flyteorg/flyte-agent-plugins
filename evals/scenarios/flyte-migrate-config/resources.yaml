@@ -1,0 +1,55 @@
+id: migrate-config-resources
+skill: flyte-migrate-config
+tier: trajectory
+control: true
+prompt: |
+  Migrate this Flyte 1 (flytekit) module to Flyte 2. Move the per-task image,
+  resources, and caching onto a shared TaskEnvironment. Write the result to
+  `migrated.py`. Do not run anything.
+
+  ```python
+  import flytekit
+  from flytekit import task, workflow, Resources, ImageSpec
+
+  image = ImageSpec(packages=["scikit-learn", "pandas"], python_version="3.11")
+
+  @task(container_image=image, requests=Resources(cpu="2", mem="4Gi"),
+        cache=True, cache_version="1.0")
+  def train(n: int) -> float:
+      return float(n)
+
+  @workflow
+  def main(n: int) -> float:
+      return train(n=n)
+  ```
+setup:
+  workspace: empty
+checks:
+  - kind: file_glob
+    glob: "migrated.py"
+  - kind: python_parses
+    file_glob: "*.py"
+  - kind: python_imports
+    module: flyte
+    file_glob: "*.py"
+  - kind: contains_regex
+    file_glob: "*.py"
+    pattern: "TaskEnvironment"
+  - kind: contains_regex
+    file_glob: "*.py"
+    pattern: "Image|Resources"
+  # v1 image/caching constructs must be gone.
+  - kind: not_contains_regex
+    file_glob: "*.py"
+    pattern: "ImageSpec|cache_version"
+  - kind: not_contains_regex
+    file_glob: "*.py"
+    pattern: "import flytekit"
+judge:
+  rubric: |
+    correctness: image/resources/cache moved onto a flyte.TaskEnvironment (image via
+    flyte.Image, cache="auto" or a CachePolicy replacing cache_version), train kept as
+    @env.task. skill_adherence: config declared once on the environment, not per-task.
+    completeness: no ImageSpec/cache_version/flytekit leftovers.
+  weights: {correctness: 0.5, skill_adherence: 0.3, completeness: 0.2}
+  pass_threshold: 0.7

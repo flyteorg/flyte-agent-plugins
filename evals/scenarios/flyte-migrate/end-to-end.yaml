@@ -1,0 +1,60 @@
+id: migrate-overview-end-to-end
+skill: flyte-migrate
+tier: trajectory
+control: true
+prompt: |
+  Migrate this small Flyte 1 (flytekit) module to Flyte 2. Apply the standard
+  changes: rename imports, move config to a TaskEnvironment, and turn the workflow
+  into an orchestrating task. Write the result to `migrated.py`. Do not run anything.
+
+  ```python
+  import flytekit
+  from flytekit import task, workflow, Resources, map_task
+
+  @flytekit.task(requests=Resources(cpu="1", mem="2Gi"))
+  def square(x: int) -> int:
+      return x * x
+
+  @flytekit.task
+  def total(xs: list[int]) -> int:
+      return sum(xs)
+
+  @flytekit.workflow
+  def main(xs: list[int]) -> int:
+      squared = map_task(square)(x=xs)
+      return total(xs=squared)
+  ```
+setup:
+  workspace: empty
+checks:
+  - kind: file_glob
+    glob: "migrated.py"
+  - kind: python_parses
+    file_glob: "*.py"
+  - kind: python_imports
+    module: flyte
+    file_glob: "*.py"
+  - kind: contains_regex
+    file_glob: "*.py"
+    pattern: "TaskEnvironment"
+  - kind: contains_regex
+    file_glob: "*.py"
+    pattern: "@\\w+\\.task"
+  # v1 constructs across several categories must all be gone.
+  - kind: not_contains_regex
+    file_glob: "*.py"
+    pattern: "import flytekit"
+  - kind: not_contains_regex
+    file_glob: "*.py"
+    pattern: "map_task"
+  - kind: not_contains_regex
+    file_glob: "*.py"
+    pattern: "@\\w*\\.?workflow"
+judge:
+  rubric: |
+    correctness: full port — flytekit->flyte imports, Resources on a TaskEnvironment,
+    square/total as @env.task, main as an orchestrating task, and map_task replaced by
+    flyte.map or asyncio.gather. skill_adherence: applies the two mechanical changes
+    from the migration overview. completeness: no flytekit/map_task/@workflow leftovers.
+  weights: {correctness: 0.5, skill_adherence: 0.3, completeness: 0.2}
+  pass_threshold: 0.7
