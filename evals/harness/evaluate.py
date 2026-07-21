@@ -128,11 +128,46 @@ def evaluate_scenario(scenario: Scenario, harness: str, glm: GLMConfig) -> Scena
             with make_sandbox(tier=scenario.tier, glm=glm) as sb:
                 traj = runner.run(scenario, sb, arm, glm)
                 arm_res = _score_trajectory(scenario, traj, sb, glm)
+                # Real tier: actually execute the produced artifact (treatment only).
+                if scenario.tier == "real" and arm == "treatment" and scenario.real_run:
+                    arm_res.checks.append(_maybe_real_run(scenario, sb))
         except Exception as exc:  # never let one arm abort the suite
             arm_res = ArmResult(arm=arm, error=f"harness crashed: {exc!r}")
         res.arms[arm] = arm_res
 
     return res
+
+
+def _maybe_real_run(scenario: Scenario, sandbox) -> "checks_mod.CheckResult":
+    """Execute the produced workflow via `flyte run` on demo.hosted (gated).
+
+    Guarded by FLYTE_EVALS_ENABLE_REAL so trajectory/local testing never submits
+    a remote run by accident. The Flyte task/CI sets it explicitly.
+    """
+    import os
+    import subprocess
+
+    spec = scenario.real_run
+    if not (spec and spec.flyte_run):
+        return checks_mod.CheckResult("real_run", True, "no real_run requested")
+    if os.environ.get("FLYTE_EVALS_ENABLE_REAL", "").lower() not in ("1", "true", "yes"):
+        return checks_mod.CheckResult("real_run", True, "skipped (FLYTE_EVALS_ENABLE_REAL unset)")
+
+    entry = (spec.entrypoint or "").split()
+    if not entry:
+        return checks_mod.CheckResult("real_run", False, "real_run.entrypoint not set")
+    cmd = ["flyte", "--config", str(REPO_ROOT / "evals" / "config" / "flyte.yaml"), "run", *entry]
+    for k, v in spec.inputs.items():
+        cmd += [f"--{k.replace('_', '-')}", str(v)]
+    try:
+        proc = subprocess.run(cmd, cwd=str(sandbox.workspace), capture_output=True,
+                              text=True, timeout=1800)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        return checks_mod.CheckResult("real_run", False, f"flyte run failed to start: {e}")
+    out = proc.stdout + proc.stderr
+    ok = proc.returncode == 0 and (spec.expect_status.upper() in out.upper() or proc.returncode == 0)
+    tail = " / ".join(out.strip().splitlines()[-3:])
+    return checks_mod.CheckResult("real_run", ok, f"exit {proc.returncode} :: {tail}")
 
 
 def _score_trajectory(scenario: Scenario, traj: Trajectory, sandbox, glm: GLMConfig) -> ArmResult:

@@ -48,9 +48,11 @@ def eval_unit(unit: dict) -> dict:
     return evaluate_scenario(sc, unit["harness"], glm).to_dict()
 
 
-@env.task
+@env.task(report=True)
 def aggregate(results: list[dict]) -> dict:
     """Collect verdicts into a scorecard summary (also emits an HTML report)."""
+    import flyte.report
+
     from evals.report import to_html, to_markdown
 
     passed = sum(1 for r in results if r["passed"])
@@ -61,10 +63,9 @@ def aggregate(results: list[dict]) -> dict:
         "markdown": to_markdown(results),
         "results": results,
     }
-    # Attach the HTML scorecard to the Flyte run report tab.
+    # Attach the HTML scorecard to the Flyte run's report tab.
     try:
-        flyte.report.replace(to_html(results))  # type: ignore[attr-defined]
-        flyte.report.flush()                     # type: ignore[attr-defined]
+        flyte.report.replace(to_html(results), do_flush=True)
     except Exception:
         pass
     return summary
