@@ -14,7 +14,8 @@ The server always starts, and offers only what can actually work:
 That is deliberate. Someone installing this plugin to *deploy their first Flyte cluster*
 has no config yet; failing at startup would make the plugin look broken at the exact
 moment they are learning it. The control-plane tools appear on their own once they are
-logged in (restart required -- the choice is made at startup).
+logged in -- run `/reload-plugins` in Claude Code, or restart it, so this process
+respawns. The choice is made at startup.
 
 Search is normally served by the sibling ``flyte-docs`` server declared in ``.mcp.json``,
 which is hosted and needs no local corpus, so this file does not duplicate it. Set
@@ -206,10 +207,10 @@ def main() -> int:
             )
         else:
             parts.append(
-                "This server is NOT connected to a Flyte cluster "
-                f"({reason}), so it cannot run tasks or inspect runs. Once a Flyte config "
-                "with a project and domain is available, restart this server to gain the "
-                "control-plane tools."
+                f"This server is NOT connected to a Flyte cluster ({reason}), so it cannot "
+                "run tasks or inspect runs. Once a Flyte config with a project and domain is "
+                "available, this server has to be relaunched to pick it up -- in Claude Code "
+                "that is /reload-plugins, since the tool set is chosen at startup."
             )
         if search_ok:
             parts.append(

@@ -167,7 +167,7 @@ machine; set `FLYTE_MCP_LOCAL_SEARCH=1` to serve search from a local corpus inst
 control plane your `flyte` CLI is authenticated against. **A cluster is optional** — it
 starts either way and offers nothing until one is reachable, so the plugin still works
 while you are deploying your first cluster. The tools appear once you are logged in
-(restart the server; the choice is made at startup).
+(run `/reload-plugins`, or restart Claude Code — the choice is made at startup).
 
 Test it end-to-end — this spawns the server exactly as Claude Code does, handshakes, and
 reports which mode it landed in:

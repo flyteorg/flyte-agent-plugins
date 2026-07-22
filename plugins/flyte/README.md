@@ -66,8 +66,9 @@ The plugin's `.mcp.json` declares **two MCP servers**, split so nothing is dupli
 **A cluster is optional.** `flyte-cluster` starts either way and offers nothing until one is
 reachable, so the plugin still works while you are deploying your first cluster. It is
 tenant-agnostic — `flyte.init_from_config()` targets whatever control plane your `flyte`
-CLI is authenticated against. Restart the server after logging in; the choice is made at
-startup.
+CLI is authenticated against. After logging in, run `/reload-plugins` (or restart Claude
+Code) so the server respawns and picks the tools up — the choice is made at startup, and
+plugin MCP servers can't be restarted from `/mcp`.
 
 To test it, run `python3 scripts/smoke_test_mcp.py` from the repo root — it reports what it
 landed in. (`flyte-docs` is hosted, so check it with
