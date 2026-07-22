@@ -1,8 +1,11 @@
 """Smoke-test the bundled Flyte MCP server the way Claude Code launches it.
 
-Reads ``plugins/flyte-skills/.mcp.json``, spawns the exact command it declares (expanding
-``${CLAUDE_PLUGIN_ROOT}``), completes the MCP handshake, lists the tools, and makes one
-real read-only call -- ``list_runs`` -- against whatever tenant you are logged into.
+Reads ``plugins/flyte/.mcp.json``, spawns the exact command the local ``flyte-cluster``
+server declares (expanding ``${CLAUDE_PLUGIN_ROOT}``), completes the MCP handshake, lists
+the tools, and makes one real read-only call against whatever tenant you are logged into.
+
+The sibling ``flyte-docs`` server is hosted HTTP, not spawned, so it is not covered here --
+curl its ``/health`` endpoint instead.
 
     python3 scripts/smoke_test_mcp.py [plugin_dir]
 
@@ -16,12 +19,12 @@ import subprocess
 import sys
 
 _DEFAULT_PLUGIN = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugins", "flyte-skills"
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugins", "flyte"
 )
 PLUGIN = sys.argv[1] if len(sys.argv) > 1 else _DEFAULT_PLUGIN
 MCP_JSON = os.path.join(PLUGIN, ".mcp.json")
 
-spec = json.load(open(MCP_JSON))["mcpServers"]["flyte"]
+spec = json.load(open(MCP_JSON))["mcpServers"]["flyte-cluster"]
 argv = [spec["command"]] + [a.replace("${CLAUDE_PLUGIN_ROOT}", PLUGIN) for a in spec["args"]]
 env = {**os.environ, **{k: v.replace("${CLAUDE_PLUGIN_ROOT}", PLUGIN) for k, v in spec.get("env", {}).items()}}
 

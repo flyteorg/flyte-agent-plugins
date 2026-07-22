@@ -1,7 +1,8 @@
-# flyte-skills
+# flyte
 
-A single [Claude Code](https://docs.claude.com/en/docs/claude-code) plugin bundling all
-the [Flyte](https://flyte.org) skills — cluster deployment and SDK / workflow authoring.
+A single [Claude Code](https://docs.claude.com/en/docs/claude-code) plugin for
+[Flyte](https://flyte.org): cluster deployment and SDK / workflow authoring skills, plus
+two bundled MCP servers.
 
 ## Skills
 
@@ -44,7 +45,7 @@ the [Flyte](https://flyte.org) skills — cluster deployment and SDK / workflow 
 - **`flyte-mcp-server`** — set up, run, scope, and connect the Flyte MCP server (including
   the one bundled with this plugin), and decide between MCP and the `flyte` CLI.
 
-## Bundled MCP server
+## Bundled MCP servers
 
 The plugin's `.mcp.json` declares **two MCP servers**, split so nothing is duplicated:
 
@@ -76,22 +77,22 @@ Scope further with `FLYTE_MCP_TOOL_GROUPS` / `FLYTE_MCP_TOOLS`, `FLYTE_MCP_CONFI
 
 ```
 /plugin marketplace add flyteorg/flyte-agent-plugins
-/plugin install flyte-skills@flyte-skills
+/plugin install flyte@flyte
 ```
 
 Then ask Claude to, e.g., "deploy a Flyte v2 cluster on AWS", "deploy Flyte on kind", or
 "scaffold a Flyte workflow" — or invoke a skill directly, e.g.
-`/flyte-skills:flyte-deploy-aws`.
+`/flyte:flyte-deploy-aws`.
 
 To pin a specific version of the skills repo, add the marketplace with the full git URL
 and append `#<ref>` — a tag or branch name (not a bare commit SHA; tag the commit to pin it):
 
 ```
 /plugin marketplace add https://github.com/flyteorg/flyte-agent-plugins.git#<tag-or-branch>
-/plugin install flyte-skills@flyte-skills
+/plugin install flyte@flyte
 ```
 
-(To change the pinned version later, `/plugin marketplace remove flyte-skills` and re-add
+(To change the pinned version later, `/plugin marketplace remove flyte` and re-add
 with the new ref.)
 
 ## Install (other agent harnesses)
@@ -108,9 +109,9 @@ codex plugin marketplace add flyteorg/flyte-agent-plugins    # or --ref <tag-or-
 **Hermes** — install individual skills by repo path (default branch only):
 
 ```
-hermes skills install flyteorg/flyte-agent-plugins/plugins/flyte-skills/skills/<skill-name>
+hermes skills install flyteorg/flyte-agent-plugins/plugins/flyte/skills/<skill-name>
 # e.g.
-hermes skills install flyteorg/flyte-agent-plugins/plugins/flyte-skills/skills/flyte-deploy-aws
+hermes skills install flyteorg/flyte-agent-plugins/plugins/flyte/skills/flyte-deploy-aws
 ```
 
 **opencode** — via the [`skills` CLI](https://github.com/vercel-labs/skills), or copy a

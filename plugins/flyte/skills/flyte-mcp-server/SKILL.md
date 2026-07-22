@@ -202,7 +202,7 @@ enabled** on any deployed server — its tools can mutate your cluster.
 
 ### Claude Code
 
-Installing the `flyte-skills` plugin is enough — its `.mcp.json` registers the server. To
+Installing the `flyte` plugin is enough — its `.mcp.json` registers the server. To
 wire one up by hand instead:
 
 ```bash
