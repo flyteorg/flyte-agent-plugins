@@ -69,46 +69,52 @@ are complementary — the MCP server uses your existing `flyte` config under the
 
 ### Bundled with this plugin (recommended)
 
-The `flyte-skills` plugin already ships a Flyte MCP server, declared in its `.mcp.json`.
-Installing the plugin wires it up — there is **nothing tenant-specific to configure**,
-because it calls `flyte.init_from_config()` and therefore acts on whatever control plane
-your `flyte` CLI is already authenticated against.
+The plugin's `.mcp.json` declares **two** servers, split so nothing is duplicated:
 
-The only requirement is [`uv`](https://docs.astral.sh/uv/) on `PATH`. **A cluster is
-optional**: the server always starts, and what it offers depends on whether a Flyte
-connection resolved.
+| Server | Transport | Tools | Needs |
+|---|---|---|---|
+| **`flyte-docs`** | hosted HTTP | 3 `search` — Flyte SDK examples, docs examples, `llms.txt` | nothing at all |
+| **`flyte`** | local stdio | 13 control-plane — run/inspect tasks, manage runs, apps, triggers | `uv`, plus a config with `project` **and** `domain` |
 
-| | Tools offered | Needs |
-|---|---|---|
-| **Not connected** | `search` only — 3 tools | nothing |
-| **Connected** | everything — 16 tools | a config with `project` *and* `domain` |
+`flyte-docs` is a read-only, unauthenticated server **operated by Union** at
+`flyte-mcp.apps.demo.hosted.unionai.cloud`. It makes search work with zero setup — no
+install, no corpus, no `uv`. The tradeoff is that your search queries leave your machine;
+see [Keeping search local](#keeping-search-local) if that matters.
 
-The search tools grep a local corpus and touch no cluster, so they work from the very first
-install. Use them to ground Flyte code you write. The control-plane tools (run tasks,
-inspect runs, manage apps and triggers) appear automatically once you have a working config
-— **restart the server after logging in**, since the mode is decided at startup.
-
-This is deliberate: someone installing the plugin to deploy their *first* Flyte cluster has
-no config yet, and a server that failed at startup would look broken exactly when they were
-learning the tool.
+`flyte` is tenant-agnostic: it calls `flyte.init_from_config()`, so it acts on whatever
+control plane your `flyte` CLI is already authenticated against. **A cluster is optional** —
+it starts either way and simply offers nothing until one is reachable, so the plugin never
+looks broken to someone who is still deploying their first cluster. The tools appear once
+you are logged in; **restart the server**, since the choice is made at startup.
 
 > Both halves of "connected" matter. `flyte.init_from_config()` **succeeds even when it
 > finds no config file at all**, leaving `project`/`domain` unset — after which every
 > control-plane tool fails with `project_id.domain: must be at least 1 characters`, which
-> reads as a tool bug rather than missing setup. The server checks for that and simply
-> doesn't offer those tools instead.
+> reads as a tool bug rather than missing setup. The server checks for that and withholds
+> those tools instead.
 
-Override any of it with environment variables — see
-[Scoping the server](#scoping-the-server):
+### Keeping search local
+
+Set `FLYTE_MCP_LOCAL_SEARCH=1` and the `flyte` server serves the search tools itself, from
+a corpus cached under `~/.flyte/mcp` (~120 MB, a few seconds on first run). Nothing leaves
+your machine and it works offline.
+
+Note that this does **not** stop `flyte-docs` from being declared — Claude Code manages
+plugin MCP servers through plugin installation, not `/mcp`, so there is no per-server
+toggle. To suppress it entirely you need a `deniedMcpServers` entry (see
+[Managed MCP configuration](https://code.claude.com/docs/en/managed-mcp)) or to disable the
+plugin. Otherwise you would see both sets of search tools.
+
+### Environment variables
 
 | Variable | Default |
 |---|---|
-| `FLYTE_MCP_TOOL_GROUPS` | `all` when connected, `search` when not |
+| `FLYTE_MCP_TOOL_GROUPS` | automatic — cluster tools when connected |
 | `FLYTE_MCP_TOOLS` | — (mutually exclusive with groups) |
 | `FLYTE_MCP_CONFIG` | — (normal config discovery) |
 | `FLYTE_MCP_PROJECT` / `FLYTE_MCP_DOMAIN` | — (from config) |
 | `FLYTE_MCP_TASK_ALLOWLIST` / `_APP_` / `_TRIGGER_` | — (unrestricted) |
-| `FLYTE_MCP_NO_SEARCH` | — (set to skip the corpus entirely) |
+| `FLYTE_MCP_LOCAL_SEARCH` | — (set to serve search locally) |
 
 Setting `FLYTE_MCP_TOOL_GROUPS`/`FLYTE_MCP_TOOLS` overrides the automatic choice, including
 offering control-plane tools while disconnected — they will fail when called.

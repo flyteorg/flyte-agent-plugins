@@ -1,5 +1,9 @@
 {
   "mcpServers": {
+    "flyte-docs": {
+      "type": "http",
+      "url": "https://flyte-mcp.apps.demo.hosted.unionai.cloud/flyte-mcp/mcp"
+    },
     "flyte": {
       "command": "uv",
       "args": [
@@ -7,8 +11,7 @@
         "--quiet",
         "--no-project",
         "${CLAUDE_PLUGIN_ROOT}/scripts/flyte_mcp_stdio.py"
-      ],
-      "env": {}
+      ]
     }
   }
 }

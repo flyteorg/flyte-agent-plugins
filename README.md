@@ -131,22 +131,23 @@ Then ask Claude to "deploy a Flyte v2 cluster on AWS", or invoke a skill directl
 
 ## Bundled MCP server
 
-Installing the plugin also registers a **Flyte MCP server**. It always starts, and adapts
-to whether you have a cluster:
+Installing the plugin registers **two MCP servers**, split so nothing is duplicated:
 
-| | Tools | Needs |
+| Server | Tools | Needs |
 |---|---|---|
-| **No Flyte config** | 3 `search` tools — grep Flyte SDK examples, docs examples, and `llms.txt` | nothing |
-| **Config with `project` + `domain`** | all 16 — plus run/inspect tasks, manage runs, apps, triggers | a Flyte login |
+| **`flyte-docs`** (hosted HTTP) | 3 `search` — Flyte SDK examples, docs examples, `llms.txt` | nothing at all |
+| **`flyte`** (local stdio) | 13 control-plane — run/inspect tasks, manage runs, apps, triggers | `uv`, plus a Flyte login |
 
-So it is useful from the first install, including while you are still deploying your first
-cluster. The control-plane tools appear once you are logged in — restart the server, since
-the mode is decided at startup.
+`flyte-docs` is a read-only, unauthenticated server **operated by Union**, so search works
+the moment you install — no setup, no corpus, no `uv`. Your search queries do leave your
+machine; set `FLYTE_MCP_LOCAL_SEARCH=1` to serve search from a local corpus instead
+(~120 MB cached under `~/.flyte/mcp`).
 
-Nothing is tenant-specific: the server calls `flyte.init_from_config()`, so it acts on the
-same control plane your `flyte` CLI is authenticated against. Requires
-[`uv`](https://docs.astral.sh/uv/) on `PATH`; the first launch caches a ~120 MB search
-corpus under `~/.flyte/mcp`.
+`flyte` is tenant-agnostic: it calls `flyte.init_from_config()`, so it acts on the same
+control plane your `flyte` CLI is authenticated against. **A cluster is optional** — it
+starts either way and offers nothing until one is reachable, so the plugin still works
+while you are deploying your first cluster. The tools appear once you are logged in
+(restart the server; the choice is made at startup).
 
 Test it end-to-end — this spawns the server exactly as Claude Code does, handshakes, and
 reports which mode it landed in:

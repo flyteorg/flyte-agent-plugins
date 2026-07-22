@@ -4,19 +4,22 @@
 # ///
 """Serve the Flyte MCP server over stdio, degrading gracefully when there is no cluster.
 
-The server always starts. What it exposes depends on whether a Flyte connection could be
-resolved:
+The server always starts, and offers only what can actually work:
 
-* **Connected** -- a Flyte config resolved with a project and domain. Exposes everything:
-  run and inspect tasks, manage runs, apps, and triggers, plus the search tools.
-* **Not connected** -- no usable config. Exposes the ``search`` tools only, which grep a
-  local corpus and need no cluster at all, so the server is still useful for looking up
-  Flyte APIs, examples, and docs while writing code.
+* **Connected** -- a Flyte config resolved with a project *and* domain. Exposes the
+  control-plane tools: run and inspect tasks, manage runs, apps, and triggers.
+* **Not connected** -- no usable config. Exposes nothing rather than tools that would fail
+  on every call.
 
-That split is deliberate. Someone installing this plugin to *deploy their first Flyte
-cluster* has no config yet; failing at startup would make the plugin look broken at the
-exact moment they are learning it. They get docs and example search instead, and the
-control-plane tools appear on their own once they are logged in.
+That is deliberate. Someone installing this plugin to *deploy their first Flyte cluster*
+has no config yet; failing at startup would make the plugin look broken at the exact
+moment they are learning it. The control-plane tools appear on their own once they are
+logged in (restart required -- the choice is made at startup).
+
+Search is normally served by the sibling ``flyte-docs`` server declared in ``.mcp.json``,
+which is hosted and needs no local corpus, so this file does not duplicate it. Set
+``FLYTE_MCP_LOCAL_SEARCH`` to serve search here instead, from a local corpus -- useful
+offline, or when search queries should not leave the machine.
 
 Nothing here is tenant-specific: ``flyte.init_from_config()`` performs the SDK's normal
 config discovery, so the tools act on the same control plane your ``flyte`` CLI talks to.
@@ -55,7 +58,8 @@ overwritten on update:
 ``FLYTE_MCP_TASK_ALLOWLIST``    comma-separated task allowlist
 ``FLYTE_MCP_APP_ALLOWLIST``     comma-separated app allowlist
 ``FLYTE_MCP_TRIGGER_ALLOWLIST`` comma-separated trigger allowlist
-``FLYTE_MCP_NO_SEARCH``         set to skip the search corpus entirely
+``FLYTE_MCP_LOCAL_SEARCH``      set to serve the search tools from a local corpus
+                                instead of the hosted flyte-docs server
 
 The search corpus is a ~120 MB shallow clone of flyte-sdk and unionai-examples plus
 llms.txt, cached under ``~/.flyte/mcp``. First run takes a few seconds; later runs reuse
@@ -121,7 +125,9 @@ def _search_paths(enabled: set[str]) -> dict[str, str | None]:
         "docs_examples_path": None,
         "full_docs_path": None,
     }
-    if os.environ.get("FLYTE_MCP_NO_SEARCH"):
+    if not os.environ.get("FLYTE_MCP_LOCAL_SEARCH"):
+        # Off by default: the plugin ships a hosted `flyte-docs` server that already
+        # provides these tools with no local corpus. Opt in for an offline/private one.
         return paths
     try:
         from flyte._bin.mcp import _MCP_CACHE_DIR, _prepare_search_corpus
@@ -161,9 +167,28 @@ def main() -> int:
         connected, reason = _connect()
 
         explicit = bool(tool_groups or tools)
+
+        # Resolve the corpus before choosing tools, not after: registering a search tool
+        # whose corpus is missing produces a tool that exists and always raises
+        # "sdk_examples_path is not configured", which is worse than not offering it.
+        wanted = _resolve_tools(tool_groups, tools) if explicit else set(SEARCH_TOOLS)
+        paths = _search_paths(wanted & set(SEARCH_TOOLS))
+        search_ok = any(paths.values())
+
         if not explicit:
-            # Offer the cluster tools only when they can actually work.
-            tool_groups = ["all"] if connected else ["search"]
+            # Offer only what can actually work: cluster tools when connected, search
+            # tools when their corpus is present. Either may be absent independently.
+            groups = ["task", "run", "app", "trigger"] if connected else []
+            if search_ok:
+                groups.append("search")
+            if not groups:
+                print(
+                    f"No tools available: not connected ({reason}) and no search corpus. "
+                    "Serving an empty tool set.",
+                    file=sys.stderr,
+                )
+                groups = ["core"]
+            tool_groups = groups
         elif not connected:
             print(
                 f"Flyte is not connected ({reason}), but tools were selected explicitly; "
@@ -172,22 +197,26 @@ def main() -> int:
             )
 
         enabled = _resolve_tools(tool_groups, tools)
-        paths = _search_paths(enabled & set(SEARCH_TOOLS))
 
+        parts = []
         if connected:
-            instructions = (
+            parts.append(
                 f"Tools for the Flyte control plane you are authenticated against ({reason}): "
-                "run and inspect tasks, manage runs, apps, and triggers. The search tools "
-                "grep Flyte SDK examples, docs examples, and llms.txt."
+                "run and inspect tasks, manage runs, apps, and triggers."
             )
         else:
-            instructions = (
-                "Flyte search tools only: grep Flyte SDK examples, docs examples, and "
-                "llms.txt to ground Flyte code you write. This server is NOT connected to a "
-                f"Flyte cluster ({reason}), so it cannot run tasks or inspect runs. Once a "
-                "Flyte config with a project and domain is available, restart this server "
-                "to gain the control-plane tools."
+            parts.append(
+                "This server is NOT connected to a Flyte cluster "
+                f"({reason}), so it cannot run tasks or inspect runs. Once a Flyte config "
+                "with a project and domain is available, restart this server to gain the "
+                "control-plane tools."
             )
+        if search_ok:
+            parts.append(
+                "The search tools grep a local copy of Flyte SDK examples, docs examples, "
+                "and llms.txt -- use them to ground Flyte code you write."
+            )
+        instructions = " ".join(parts)
 
         print(
             f"flyte-mcp: {'connected' if connected else 'not connected'} ({reason}); "
