@@ -118,7 +118,7 @@ pi install git:github.com/flyteorg/flyte-agent-plugins@<tag>         # pinned to
 
 | Skill | Description |
 |-------|-------------|
-| [`flyte-mcp-server`](plugins/flyte/skills/flyte-mcp-server) | Set up, run, scope, and connect the Flyte MCP server so an AI assistant (Claude Code, OpenCode) can act on your cluster — run tasks, monitor runs, manage apps/triggers, search docs/examples. Covers the server bundled with this plugin, running it standalone over local HTTP, remote deployment, tool/allowlist scoping, and when to use MCP vs. the `flyte` CLI. |
+| [`flyte-mcp-server`](plugins/flyte/skills/flyte-mcp-server) | Decide when to drive Flyte through MCP tools vs. the `flyte` CLI, and build your own MCP server with `FlyteMCPAppEnvironment` — transports, tool-group/tool/allowlist scoping, deploying it for a team, and connecting clients. (For the servers this plugin already bundles, see [Bundled MCP servers](#bundled-mcp-servers).) |
 
 Example:
 
@@ -136,14 +136,14 @@ Installing the plugin registers **two MCP servers**, split so nothing is duplica
 | Server | Tools | Needs |
 |---|---|---|
 | **`flyte-docs`** (hosted HTTP) | 3 `search` — Flyte SDK examples, docs examples, `llms.txt` | nothing at all |
-| **`flyte`** (local stdio) | 13 control-plane — run/inspect tasks, manage runs, apps, triggers | `uv`, plus a Flyte login |
+| **`flyte-cluster`** (local stdio) | 13 control-plane — run/inspect tasks, manage runs, apps, triggers | `uv`, plus a Flyte login |
 
 `flyte-docs` is a read-only, unauthenticated server **operated by Union**, so search works
 the moment you install — no setup, no corpus, no `uv`. Your search queries do leave your
 machine; set `FLYTE_MCP_LOCAL_SEARCH=1` to serve search from a local corpus instead
 (~120 MB cached under `~/.flyte/mcp`).
 
-`flyte` is tenant-agnostic: it calls `flyte.init_from_config()`, so it acts on the same
+`flyte-cluster` is tenant-agnostic: it calls `flyte.init_from_config()`, so it acts on the same
 control plane your `flyte` CLI is authenticated against. **A cluster is optional** — it
 starts either way and offers nothing until one is reachable, so the plugin still works
 while you are deploying your first cluster. The tools appear once you are logged in

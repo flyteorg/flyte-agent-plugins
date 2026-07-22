@@ -52,26 +52,44 @@ The plugin's `.mcp.json` declares **two MCP servers**, split so nothing is dupli
 - **`flyte-docs`** — hosted HTTP, 3 `search` tools over Flyte SDK examples, docs examples,
   and `llms.txt`. Read-only, unauthenticated, **operated by Union**. Needs nothing at all,
   so search works the moment you install. Your queries do leave your machine.
-- **`flyte`** — local stdio (`scripts/flyte_mcp_stdio.py`), 13 control-plane tools: run and
-  inspect tasks, manage runs, apps, and triggers. Needs [`uv`](https://docs.astral.sh/uv/)
-  and a Flyte config with `project` and `domain`.
+- **`flyte-cluster`** — local stdio (`scripts/flyte_mcp_stdio.py`), 13 control-plane tools:
+  run and inspect tasks, manage runs, apps, and triggers. Needs
+  [`uv`](https://docs.astral.sh/uv/) and a Flyte config with `project` and `domain`.
 
-**A cluster is optional.** `flyte` starts either way and offers nothing until one is
+**A cluster is optional.** `flyte-cluster` starts either way and offers nothing until one is
 reachable, so the plugin still works while you are deploying your first cluster. It is
 tenant-agnostic — `flyte.init_from_config()` targets whatever control plane your `flyte`
 CLI is authenticated against. Restart the server after logging in; the choice is made at
 startup.
 
-Set `FLYTE_MCP_LOCAL_SEARCH=1` to serve search from a local corpus (~120 MB under
-`~/.flyte/mcp`) instead of the hosted server — offline and private. Note there is no
-per-server toggle for plugin MCP servers, so `flyte-docs` stays declared either way; see
-the `flyte-mcp-server` skill.
-
 To test it, run `python3 scripts/smoke_test_mcp.py` from the repo root — it reports what it
-landed in.
+landed in. (`flyte-docs` is hosted, so check it with
+`curl https://flyte-mcp.apps.demo.hosted.unionai.cloud/health` instead.)
 
-Scope further with `FLYTE_MCP_TOOL_GROUPS` / `FLYTE_MCP_TOOLS`, `FLYTE_MCP_CONFIG`,
-`FLYTE_MCP_PROJECT`, `FLYTE_MCP_DOMAIN`, or `FLYTE_MCP_{TASK,APP,TRIGGER}_ALLOWLIST`.
+### Configuring `flyte-cluster`
+
+Set these in your shell or in the `env` block of an MCP config. The plugin's own `.mcp.json`
+sets none of them, so ambient values apply.
+
+| Variable | Effect |
+|---|---|
+| `FLYTE_MCP_LOCAL_SEARCH` | serve search here, from a local corpus (~120 MB under `~/.flyte/mcp`) instead of the hosted server — offline and private |
+| `FLYTE_MCP_TOOL_GROUPS` | override the automatic choice; valid groups are `all`, `core`, `task`, `run`, `app`, `trigger`, `search` |
+| `FLYTE_MCP_TOOLS` | an explicit tool list (mutually exclusive with groups) |
+| `FLYTE_MCP_CONFIG` | a specific Flyte config file, instead of normal discovery |
+| `FLYTE_MCP_PROJECT` / `FLYTE_MCP_DOMAIN` | override the project/domain from the config |
+| `FLYTE_MCP_TASK_ALLOWLIST` / `_APP_` / `_TRIGGER_` | restrict which resources the tools may target |
+
+Setting `FLYTE_MCP_TOOL_GROUPS`/`FLYTE_MCP_TOOLS` overrides the automatic choice, including
+offering control-plane tools while disconnected — those will fail when called.
+
+Note there is no per-server toggle for plugin MCP servers: Claude Code manages them through
+plugin installation, not `/mcp`. So `FLYTE_MCP_LOCAL_SEARCH` moves search into
+`flyte-cluster` but does not un-declare `flyte-docs` — suppressing that needs a
+`deniedMcpServers` entry or disabling the plugin.
+
+To build and deploy an MCP server of your own, and to decide when a job belongs in MCP
+rather than the `flyte` CLI, see the `flyte-mcp-server` skill.
 
 ## Install (Claude Code plugin marketplace)
 
