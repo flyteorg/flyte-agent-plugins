@@ -1,6 +1,6 @@
 ---
 name: flyte-sdk-author
-description: 'Creates Flyte 2 project scaffolds (tasks, workflows, launch plans, apps), selects patterns (map tasks, traces, dynamic workflows, conditions), and generates code from templates aligned to the user's constraints. Use when the user wants to create or scaffold Flyte workflows, tasks, or apps from scratch — "write a Flyte workflow", "create a task", "scaffold a Flyte project", "build a Flyte pipeline". Trigger words: "author", "create", "scaffold", "write a workflow", "write a task", "Flyte project structure".'
+description: 'Creates Flyte 2 project scaffolds (tasks, workflows, launch plans, apps), selects patterns (map tasks, traces, dynamic workflows, conditions), and generates code from templates aligned to the user''s constraints. Use when the user wants to create or scaffold Flyte workflows, tasks, or apps from scratch — "write a Flyte workflow", "create a task", "scaffold a Flyte project", "build a Flyte pipeline". Trigger words: "author", "create", "scaffold", "write a workflow", "write a task", "Flyte project structure".'
 ---
 
 # Flyte 2 SDK Author Skill

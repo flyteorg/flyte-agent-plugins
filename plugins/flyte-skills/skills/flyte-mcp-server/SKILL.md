@@ -1,6 +1,6 @@
 ---
 name: flyte-mcp-server
-description: 'Set up, run, scope, and connect the Flyte MCP server, which exposes Flyte control-plane operations (run tasks, monitor runs, manage apps/triggers, build images, run uv scripts, search docs/examples) as Model Context Protocol tools for AI assistants like Claude Code and OpenCode. Covers running locally with uvx (stdio), deploying remotely over HTTP with FlyteMCPAppEnvironment, tool-group/tool/allowlist scoping, and when to prefer the MCP server over the flyte CLI. Use when the user wants an assistant to act on their Flyte cluster, wire up flyte-mcp, or decide between MCP and CLI. Trigger words: "MCP", "flyte-mcp", "MCP server", "connect Claude to Flyte", "agentic Flyte", "mcp add", "act on my cluster".'
+description: 'Set up, run, scope, and connect the Flyte MCP server, which exposes Flyte control-plane operations (run tasks, monitor runs, manage apps/triggers, search docs/examples) as Model Context Protocol tools for AI assistants like Claude Code and OpenCode. Covers the server bundled with this plugin, running it standalone over local HTTP, deploying it remotely with FlyteMCPAppEnvironment, tool-group/tool/allowlist scoping, and when to prefer the MCP server over the flyte CLI. Use when the user wants an assistant to act on their Flyte cluster, wire up flyte-mcp, or decide between MCP and CLI. Trigger words: "MCP", "flyte-mcp", "MCP server", "connect Claude to Flyte", "agentic Flyte", "mcp add", "act on my cluster".'
 ---
 
 # Flyte MCP Server Skill
@@ -8,8 +8,11 @@ description: 'Set up, run, scope, and connect the Flyte MCP server, which expose
 The **Flyte MCP server** exposes Flyte control-plane operations as
 [Model Context Protocol](https://modelcontextprotocol.io) tools, so an AI assistant
 (Claude Code, OpenCode, Cursor, …) can run tasks, monitor runs, manage apps and triggers,
-build images, run `uv` scripts, and search Flyte docs/examples **on your behalf** — without
-you copy-pasting CLI commands.
+and search Flyte docs/examples **on your behalf** — without you copy-pasting CLI commands.
+
+It is **tenant-agnostic**: the server calls `flyte.init_from_config()`, so it always acts on
+the control plane you are already authenticated against. Nothing is hardcoded to a
+particular cluster.
 
 ## Grounding References
 
@@ -64,13 +67,69 @@ are complementary — the MCP server uses your existing `flyte` config under the
 
 ## Running the server
 
-### Local (stdio) — for development
+### Bundled with this plugin (recommended)
 
-Runs against your local Flyte config; the client launches it as a subprocess.
+The `flyte-skills` plugin already ships a Flyte MCP server, declared in its `.mcp.json`.
+Installing the plugin wires it up — there is **nothing tenant-specific to configure**,
+because it calls `flyte.init_from_config()` and therefore acts on whatever control plane
+your `flyte` CLI is already authenticated against.
+
+Requirements: [`uv`](https://docs.astral.sh/uv/) on `PATH`, and a Flyte config that sets
+**`project` and `domain`**. If either is missing the server exits with a message telling
+you so; the rest of the plugin's skills keep working.
+
+> Watch for this: `flyte.init_from_config()` **succeeds even when it finds no config file
+> at all**, leaving `project`/`domain` unset. Every control-plane tool then fails with
+> `project_id.domain: must be at least 1 characters`, which looks like a tool bug rather
+> than missing setup. The bundled server checks for this at startup so the failure lands
+> somewhere you can act on it.
+
+Scope it (or opt into `search`) by setting environment variables — see
+[Scoping the server](#scoping-the-server):
+
+| Variable | Default |
+|---|---|
+| `FLYTE_MCP_TOOL_GROUPS` | `task,run,app,trigger` |
+| `FLYTE_MCP_TOOLS` | — (mutually exclusive with groups) |
+| `FLYTE_MCP_CONFIG` | — (normal config discovery) |
+| `FLYTE_MCP_PROJECT` / `FLYTE_MCP_DOMAIN` | — (from config) |
+| `FLYTE_MCP_TASK_ALLOWLIST` / `_APP_` / `_TRIGGER_` | — (unrestricted) |
+
+The `search` group is **off by default**: those tools clone flyte-sdk and unionai-examples
+into `~/.flyte/mcp` on first use — a slow surprise during MCP startup — and this plugin's
+skills already provide docs grounding. Set `FLYTE_MCP_TOOL_GROUPS=all` to opt in.
+
+### Local, standalone — for development
+
+By default `flyte-mcp` serves **streamable-HTTP under uvicorn**. It binds `--port`
+(default 8080) and blocks:
 
 ```bash
-uvx --from "flyte[mcp]" flyte-mcp
+uvx --from "flyte[mcp]" flyte-mcp            # http://localhost:8080/flyte-mcp/mcp
 ```
+
+Always use `uvx --from "flyte[mcp]"`, never `uvx --with "flyte[mcp]"`. `uvx <cmd>` resolves
+the package from the *command name*, and `flyte-mcp` is an unrelated third-party project on
+PyPI — `--with` installs and runs **that** instead.
+
+#### stdio: check your `flyte` version first
+
+MCP clients usually prefer to launch a local server as a subprocess over stdio.
+
+- **`flyte[mcp]` ≤ 2.5.11** has no working stdio transport. `MCPAppEnvironment` accepts
+  `transport="stdio"` and validates it, but `__post_init__` builds the Starlette app and
+  points `_server` at uvicorn for *every* value — so `"stdio"` silently serves HTTP. Use
+  this plugin's bundled server, which runs the environment's `FastMCP` object directly
+  (`env.mcp.run(transport="stdio")`) to work around it.
+- **Newer versions** support it natively
+  ([flyte-sdk#1319](https://github.com/flyteorg/flyte-sdk/pull/1319)):
+
+  ```bash
+  uvx --from "flyte[mcp]" flyte-mcp --transport stdio
+  ```
+
+  Note that stdio cannot be deployed or served via `flyte.serve()` — that path runs the
+  server on a background thread behind an HTTP health check. It is local-only.
 
 ### Remote (HTTP) — for shared / production use
 
@@ -97,8 +156,8 @@ mcp_env = FlyteMCPAppEnvironment(
     transport="streamable-http",
     instructions=(
         "This MCP server provides tools to interact with the Flyte control plane. "
-        "Use the available tools to run tasks, monitor runs, manage apps, build images, "
-        "build and run UV scripts remotely, and search SDK/docs examples."
+        "Use the available tools to run tasks, monitor runs, manage apps and triggers, "
+        "and search SDK/docs examples."
     ),
 )
 
@@ -120,9 +179,17 @@ enabled** on any deployed server — its tools can mutate your cluster.
 
 ### Claude Code
 
+Installing the `flyte-skills` plugin is enough — its `.mcp.json` registers the server. To
+wire one up by hand instead:
+
 ```bash
-# Local (stdio)
-claude mcp add --transport stdio flyte-mcp -- uvx --from "flyte[mcp]" flyte-mcp
+# Local, stdio — requires a flyte[mcp] with native stdio (see the version note above).
+claude mcp add --transport stdio flyte-mcp -- \
+  uvx --from "flyte[mcp]" flyte-mcp --transport stdio
+
+# Local, HTTP — works on any version. Start `uvx --from "flyte[mcp]" flyte-mcp`
+# first, leave it running, then attach.
+claude mcp add --transport http flyte-mcp-http http://localhost:8080/flyte-mcp/mcp
 
 # Remote (HTTP, with a bearer token)
 claude mcp add --transport http \
@@ -130,9 +197,13 @@ claude mcp add --transport http \
   flyte-mcp-remote https://<HOST>/flyte-mcp/mcp
 ```
 
+On a version without native stdio, `--transport stdio` pointed at the bare `flyte-mcp`
+command will appear to connect and then fail: the process serves HTTP while the client
+waits for JSON-RPC on stdout.
+
 ### OpenCode
 
-**Local** — in `opencode.json`:
+**Local, stdio** — on a `flyte[mcp]` with native stdio, `"type": "local"` works directly:
 
 ```json
 {
@@ -140,7 +211,24 @@ claude mcp add --transport http \
   "mcp": {
     "flyte-mcp": {
       "type": "local",
-      "command": ["uvx", "--from", "flyte[mcp]", "flyte-mcp"],
+      "command": ["uvx", "--from", "flyte[mcp]", "flyte-mcp", "--transport", "stdio"],
+      "enabled": true
+    }
+  }
+}
+```
+
+**Local, HTTP** — on older versions, `"type": "local"` would spawn a process expecting
+stdio that only speaks HTTP. Start the server (`uvx --from "flyte[mcp]" flyte-mcp`) and
+attach to it as a *remote* instead:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "flyte-mcp": {
+      "type": "remote",
+      "url": "http://localhost:8080/flyte-mcp/mcp",
       "enabled": true
     }
   }
@@ -172,12 +260,13 @@ deployed server, **scope down** — expose only what the assistant needs.
 
 ### Tool groups (coarse)
 
-Enable whole groups such as `task`, `run`, `script`, and `search`:
+Enable whole groups — the valid ones are `all`, `core`, `task`, `run`, `app`, `trigger`,
+and `search`:
 
 ```python
 mcp_env = FlyteMCPAppEnvironment(
     name="restricted-mcp",
-    tool_groups=["task", "run", "script"],
+    tool_groups=["task", "run", "search"],
 )
 ```
 
@@ -195,13 +284,13 @@ mcp_env = FlyteMCPAppEnvironment(
 ```python
 mcp_env = FlyteMCPAppEnvironment(
     name="restricted-mcp",
-    tool_groups=["task", "run", "script", "search"],
+    tool_groups=["task", "run", "trigger", "search"],
     task_allowlist=["my-project/my-task", "another-task"],
     app_allowlist=["my-app"],
     trigger_allowlist=["nightly-retrain"],
     instructions=(
         "This MCP server provides tools to run and monitor specific Flyte tasks, "
-        "build and run UV scripts remotely, and search Flyte SDK/docs examples. "
+        "manage triggers, and search Flyte SDK/docs examples. "
         "Only allowlisted tasks can be accessed."
     ),
 )
@@ -215,15 +304,23 @@ grounding.
 
 | Group | Tools |
 |---|---|
-| **Task** | `run_task`, `get_task`, `list_tasks` |
-| **Run** | `get_run`, `wait_for_run`, `get_run_io`, `abort_run`, `list_runs` |
-| **App / Trigger** | `get_app`, `activate_app`, `deactivate_app`, `activate_trigger`, `deactivate_trigger` |
-| **Build / Image** | `build_image`, `build_uv_script_image_remote`, `run_uv_script_remote` |
-| **Script utilities** | `flyte_uv_script_format`, `flyte_uv_script_example` |
-| **Search** | `search_flyte_sdk_examples`, `search_flyte_docs_examples`, `search_full_docs` |
+| `task` | `run_task`, `get_task`, `list_tasks` |
+| `run` | `get_run`, `wait_for_run`, `get_run_io`, `abort_run`, `list_runs` |
+| `app` | `get_app`, `activate_app`, `deactivate_app` |
+| `trigger` | `activate_trigger`, `deactivate_trigger` |
+| `search` | `search_flyte_sdk_examples`, `search_flyte_docs_examples`, `search_full_docs` |
 
-Mutating tools (`run_task`, `abort_run`, `activate_*`/`deactivate_*`, `build_*`, `run_*`)
-change cluster state — allowlist them and gate them behind auth on shared servers.
+That is the complete surface — 16 tools. `all` selects every one of them; `core` selects
+none (it serves only the HTTP routes, `/health` and the MCP mount).
+
+> Earlier releases also exposed `build_image`, `build_uv_script_image_remote`,
+> `run_uv_script_remote`, `flyte_uv_script_format`, and `flyte_uv_script_example` under
+> `build` and `script` groups. Those were **removed in flyte-sdk v2.3.6**
+> ([`c8a6ec5e`](https://github.com/flyteorg/flyte-sdk/commit/c8a6ec5e), "simplify flyte
+> mcp"). Passing `--tool-groups build,script` now raises `Unknown tool group(s)`.
+
+Mutating tools (`run_task`, `abort_run`, `activate_*`/`deactivate_*`) change cluster
+state — allowlist them and gate them behind auth on shared servers.
 
 ## Best practices
 

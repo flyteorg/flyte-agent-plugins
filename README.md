@@ -3,7 +3,9 @@
 A [Claude Code](https://docs.claude.com/en/docs/claude-code) plugin marketplace of
 skills for working with [Flyte](https://flyte.org).
 
-All skills ship in a single `flyte-skills` plugin.
+All skills ship in a single `flyte-skills` plugin, which also bundles a **Flyte MCP
+server** so Claude can act on your own cluster — see
+[Bundled MCP server](#bundled-mcp-server).
 
 ## Install
 
@@ -116,7 +118,7 @@ pi install git:github.com/flyteorg/flyte-agent-plugins@<tag>         # pinned to
 
 | Skill | Description |
 |-------|-------------|
-| [`flyte-mcp-server`](plugins/flyte-skills/skills/flyte-mcp-server) | Set up, run, scope, and connect the Flyte MCP server so an AI assistant (Claude Code, OpenCode) can act on your cluster — run tasks, monitor runs, manage apps/triggers, build images, run `uv` scripts, search docs/examples. Covers local (`uvx`/stdio) and remote (HTTP) deployment, tool/allowlist scoping, and when to use MCP vs. the `flyte` CLI. |
+| [`flyte-mcp-server`](plugins/flyte-skills/skills/flyte-mcp-server) | Set up, run, scope, and connect the Flyte MCP server so an AI assistant (Claude Code, OpenCode) can act on your cluster — run tasks, monitor runs, manage apps/triggers, search docs/examples. Covers the server bundled with this plugin, running it standalone over local HTTP, remote deployment, tool/allowlist scoping, and when to use MCP vs. the `flyte` CLI. |
 
 Example:
 
@@ -127,6 +129,29 @@ Example:
 Then ask Claude to "deploy a Flyte v2 cluster on AWS", or invoke a skill directly with
 `/flyte-skills:flyte-deploy-aws`.
 
+## Bundled MCP server
+
+Installing the plugin also registers a **Flyte MCP server**, so Claude can operate your
+cluster directly — run and inspect tasks, manage runs, apps, and triggers.
+
+Nothing is tenant-specific: the server calls `flyte.init_from_config()`, so it acts on the
+same control plane your `flyte` CLI is authenticated against. It needs
+[`uv`](https://docs.astral.sh/uv/) on `PATH` and a Flyte config that sets **`project` and
+`domain`** (the control-plane tools fail without them). If either is missing the server
+refuses to start and tells you how to fix it; the skills keep working regardless.
+
+Test it end-to-end — this spawns the server exactly as Claude Code does, handshakes, and
+makes one read-only `list_runs` call against your tenant:
+
+```
+python3 scripts/smoke_test_mcp.py
+```
+
+Default tools are `task,run,app,trigger`. Scope it (or opt into `search`) with
+`FLYTE_MCP_TOOL_GROUPS`, `FLYTE_MCP_TOOLS`, `FLYTE_MCP_CONFIG`, `FLYTE_MCP_PROJECT`,
+`FLYTE_MCP_DOMAIN`, or the `FLYTE_MCP_{TASK,APP,TRIGGER}_ALLOWLIST` variables — see the
+[`flyte-mcp-server`](plugins/flyte-skills/skills/flyte-mcp-server) skill.
+
 ## Layout
 
 All skills live in the single `flyte-skills` plugin:
@@ -136,8 +161,13 @@ All skills live in the single `flyte-skills` plugin:
 package.json                                   # pi package manifest (pi.skills)
 plugins/flyte-skills/.claude-plugin/plugin.json   # Claude Code plugin manifest
 plugins/flyte-skills/.codex-plugin/plugin.json    # Codex plugin manifest
+plugins/flyte-skills/.mcp.json                    # bundled Flyte MCP server (Claude Code)
+plugins/flyte-skills/scripts/flyte_mcp_stdio.py   # stdio adapter the .mcp.json launches
 plugins/flyte-skills/skills/<skill>/SKILL.md
 ```
+
+The `.mcp.json` server is Claude Code-specific; the skills themselves stay portable across
+harnesses.
 
 ## Contributing
 

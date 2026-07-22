@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "flyte": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--quiet",
+        "--no-project",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/flyte_mcp_stdio.py"
+      ],
+      "env": {
+        "FLYTE_MCP_TOOL_GROUPS": "task,run,app,trigger"
+      }
+    }
+  }
+}

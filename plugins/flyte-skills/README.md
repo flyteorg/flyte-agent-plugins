@@ -39,6 +39,34 @@ the [Flyte](https://flyte.org) skills — cluster deployment and SDK / workflow 
 - **`flyte-sdk-ml`** — ML workload patterns (training, HPO, experiment tracking, evaluation,
   batch/real-time inference, monitoring).
 
+### Tooling / Integration
+
+- **`flyte-mcp-server`** — set up, run, scope, and connect the Flyte MCP server (including
+  the one bundled with this plugin), and decide between MCP and the `flyte` CLI.
+
+## Bundled MCP server
+
+The plugin also ships a **Flyte MCP server** (`.mcp.json` → `scripts/flyte_mcp_stdio.py`),
+which lets Claude act on your cluster directly: run and inspect tasks, manage runs, apps,
+and triggers.
+
+It is tenant-agnostic — it calls `flyte.init_from_config()`, so it acts on whatever control
+plane your `flyte` CLI is already authenticated against. There is nothing to configure.
+
+Requires [`uv`](https://docs.astral.sh/uv/) on `PATH` and a Flyte config that sets
+**`project` and `domain`** — the control-plane tools fail without them, so the server
+checks at startup and refuses to run rather than failing later on every call. The skills
+keep working either way. The first launch resolves dependencies, so give it a moment.
+
+To test it, run `python3 scripts/smoke_test_mcp.py` from the repo root.
+
+Scope it with environment variables — `FLYTE_MCP_TOOL_GROUPS` (default
+`task,run,app,trigger`), `FLYTE_MCP_TOOLS`, `FLYTE_MCP_CONFIG`, `FLYTE_MCP_PROJECT`,
+`FLYTE_MCP_DOMAIN`, and the `FLYTE_MCP_{TASK,APP,TRIGGER}_ALLOWLIST` trio. The `search`
+group is off by default because its tools clone two repos into `~/.flyte/mcp` on first
+use; set `FLYTE_MCP_TOOL_GROUPS=all` to opt in. See the `flyte-mcp-server` skill for
+details.
+
 ## Install (Claude Code plugin marketplace)
 
 ```
