@@ -46,26 +46,30 @@ the [Flyte](https://flyte.org) skills — cluster deployment and SDK / workflow 
 
 ## Bundled MCP server
 
-The plugin also ships a **Flyte MCP server** (`.mcp.json` → `scripts/flyte_mcp_stdio.py`),
-which lets Claude act on your cluster directly: run and inspect tasks, manage runs, apps,
-and triggers.
+The plugin also ships a **Flyte MCP server** (`.mcp.json` → `scripts/flyte_mcp_stdio.py`).
 
-It is tenant-agnostic — it calls `flyte.init_from_config()`, so it acts on whatever control
-plane your `flyte` CLI is already authenticated against. There is nothing to configure.
+**A cluster is optional.** The server always starts, and adapts:
 
-Requires [`uv`](https://docs.astral.sh/uv/) on `PATH` and a Flyte config that sets
-**`project` and `domain`** — the control-plane tools fail without them, so the server
-checks at startup and refuses to run rather than failing later on every call. The skills
-keep working either way. The first launch resolves dependencies, so give it a moment.
+- **No Flyte config** — you get the 3 `search` tools, which grep a local corpus of Flyte
+  SDK examples, docs examples, and `llms.txt`. No cluster involved. Useful from the first
+  install, including while you are still deploying your first cluster.
+- **A config with `project` and `domain`** — you also get the 13 control-plane tools: run
+  and inspect tasks, manage runs, apps, and triggers.
 
-To test it, run `python3 scripts/smoke_test_mcp.py` from the repo root.
+It is tenant-agnostic: it calls `flyte.init_from_config()`, so it acts on whatever control
+plane your `flyte` CLI is authenticated against. Nothing to configure. Restart the server
+after logging in, since the mode is decided at startup.
 
-Scope it with environment variables — `FLYTE_MCP_TOOL_GROUPS` (default
-`task,run,app,trigger`), `FLYTE_MCP_TOOLS`, `FLYTE_MCP_CONFIG`, `FLYTE_MCP_PROJECT`,
-`FLYTE_MCP_DOMAIN`, and the `FLYTE_MCP_{TASK,APP,TRIGGER}_ALLOWLIST` trio. The `search`
-group is off by default because its tools clone two repos into `~/.flyte/mcp` on first
-use; set `FLYTE_MCP_TOOL_GROUPS=all` to opt in. See the `flyte-mcp-server` skill for
-details.
+Requires [`uv`](https://docs.astral.sh/uv/) on `PATH`. First launch resolves dependencies
+and fetches the ~120 MB search corpus into `~/.flyte/mcp` (a few seconds, cached after).
+
+To test it, run `python3 scripts/smoke_test_mcp.py` from the repo root — it reports which
+mode it landed in.
+
+Override the automatic choice with `FLYTE_MCP_TOOL_GROUPS` / `FLYTE_MCP_TOOLS`, and scope
+further with `FLYTE_MCP_CONFIG`, `FLYTE_MCP_PROJECT`, `FLYTE_MCP_DOMAIN`,
+`FLYTE_MCP_{TASK,APP,TRIGGER}_ALLOWLIST`, or `FLYTE_MCP_NO_SEARCH`. See the
+`flyte-mcp-server` skill for details.
 
 ## Install (Claude Code plugin marketplace)
 

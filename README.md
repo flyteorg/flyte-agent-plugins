@@ -131,25 +131,33 @@ Then ask Claude to "deploy a Flyte v2 cluster on AWS", or invoke a skill directl
 
 ## Bundled MCP server
 
-Installing the plugin also registers a **Flyte MCP server**, so Claude can operate your
-cluster directly — run and inspect tasks, manage runs, apps, and triggers.
+Installing the plugin also registers a **Flyte MCP server**. It always starts, and adapts
+to whether you have a cluster:
+
+| | Tools | Needs |
+|---|---|---|
+| **No Flyte config** | 3 `search` tools — grep Flyte SDK examples, docs examples, and `llms.txt` | nothing |
+| **Config with `project` + `domain`** | all 16 — plus run/inspect tasks, manage runs, apps, triggers | a Flyte login |
+
+So it is useful from the first install, including while you are still deploying your first
+cluster. The control-plane tools appear once you are logged in — restart the server, since
+the mode is decided at startup.
 
 Nothing is tenant-specific: the server calls `flyte.init_from_config()`, so it acts on the
-same control plane your `flyte` CLI is authenticated against. It needs
-[`uv`](https://docs.astral.sh/uv/) on `PATH` and a Flyte config that sets **`project` and
-`domain`** (the control-plane tools fail without them). If either is missing the server
-refuses to start and tells you how to fix it; the skills keep working regardless.
+same control plane your `flyte` CLI is authenticated against. Requires
+[`uv`](https://docs.astral.sh/uv/) on `PATH`; the first launch caches a ~120 MB search
+corpus under `~/.flyte/mcp`.
 
 Test it end-to-end — this spawns the server exactly as Claude Code does, handshakes, and
-makes one read-only `list_runs` call against your tenant:
+reports which mode it landed in:
 
 ```
 python3 scripts/smoke_test_mcp.py
 ```
 
-Default tools are `task,run,app,trigger`. Scope it (or opt into `search`) with
-`FLYTE_MCP_TOOL_GROUPS`, `FLYTE_MCP_TOOLS`, `FLYTE_MCP_CONFIG`, `FLYTE_MCP_PROJECT`,
-`FLYTE_MCP_DOMAIN`, or the `FLYTE_MCP_{TASK,APP,TRIGGER}_ALLOWLIST` variables — see the
+Override the automatic tool choice with `FLYTE_MCP_TOOL_GROUPS` / `FLYTE_MCP_TOOLS`, and
+scope with `FLYTE_MCP_CONFIG`, `FLYTE_MCP_PROJECT`, `FLYTE_MCP_DOMAIN`,
+`FLYTE_MCP_{TASK,APP,TRIGGER}_ALLOWLIST`, or `FLYTE_MCP_NO_SEARCH` — see the
 [`flyte-mcp-server`](plugins/flyte-skills/skills/flyte-mcp-server) skill.
 
 ## Layout

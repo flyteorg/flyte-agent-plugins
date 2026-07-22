@@ -74,30 +74,47 @@ Installing the plugin wires it up — there is **nothing tenant-specific to conf
 because it calls `flyte.init_from_config()` and therefore acts on whatever control plane
 your `flyte` CLI is already authenticated against.
 
-Requirements: [`uv`](https://docs.astral.sh/uv/) on `PATH`, and a Flyte config that sets
-**`project` and `domain`**. If either is missing the server exits with a message telling
-you so; the rest of the plugin's skills keep working.
+The only requirement is [`uv`](https://docs.astral.sh/uv/) on `PATH`. **A cluster is
+optional**: the server always starts, and what it offers depends on whether a Flyte
+connection resolved.
 
-> Watch for this: `flyte.init_from_config()` **succeeds even when it finds no config file
-> at all**, leaving `project`/`domain` unset. Every control-plane tool then fails with
-> `project_id.domain: must be at least 1 characters`, which looks like a tool bug rather
-> than missing setup. The bundled server checks for this at startup so the failure lands
-> somewhere you can act on it.
+| | Tools offered | Needs |
+|---|---|---|
+| **Not connected** | `search` only — 3 tools | nothing |
+| **Connected** | everything — 16 tools | a config with `project` *and* `domain` |
 
-Scope it (or opt into `search`) by setting environment variables — see
+The search tools grep a local corpus and touch no cluster, so they work from the very first
+install. Use them to ground Flyte code you write. The control-plane tools (run tasks,
+inspect runs, manage apps and triggers) appear automatically once you have a working config
+— **restart the server after logging in**, since the mode is decided at startup.
+
+This is deliberate: someone installing the plugin to deploy their *first* Flyte cluster has
+no config yet, and a server that failed at startup would look broken exactly when they were
+learning the tool.
+
+> Both halves of "connected" matter. `flyte.init_from_config()` **succeeds even when it
+> finds no config file at all**, leaving `project`/`domain` unset — after which every
+> control-plane tool fails with `project_id.domain: must be at least 1 characters`, which
+> reads as a tool bug rather than missing setup. The server checks for that and simply
+> doesn't offer those tools instead.
+
+Override any of it with environment variables — see
 [Scoping the server](#scoping-the-server):
 
 | Variable | Default |
 |---|---|
-| `FLYTE_MCP_TOOL_GROUPS` | `task,run,app,trigger` |
+| `FLYTE_MCP_TOOL_GROUPS` | `all` when connected, `search` when not |
 | `FLYTE_MCP_TOOLS` | — (mutually exclusive with groups) |
 | `FLYTE_MCP_CONFIG` | — (normal config discovery) |
 | `FLYTE_MCP_PROJECT` / `FLYTE_MCP_DOMAIN` | — (from config) |
 | `FLYTE_MCP_TASK_ALLOWLIST` / `_APP_` / `_TRIGGER_` | — (unrestricted) |
+| `FLYTE_MCP_NO_SEARCH` | — (set to skip the corpus entirely) |
 
-The `search` group is **off by default**: those tools clone flyte-sdk and unionai-examples
-into `~/.flyte/mcp` on first use — a slow surprise during MCP startup — and this plugin's
-skills already provide docs grounding. Set `FLYTE_MCP_TOOL_GROUPS=all` to opt in.
+Setting `FLYTE_MCP_TOOL_GROUPS`/`FLYTE_MCP_TOOLS` overrides the automatic choice, including
+offering control-plane tools while disconnected — they will fail when called.
+
+The search corpus is a ~120 MB shallow clone of flyte-sdk and unionai-examples plus
+`llms.txt`, cached under `~/.flyte/mcp`. First run takes a few seconds; later runs reuse it.
 
 ### Local, standalone — for development
 

@@ -59,19 +59,31 @@ try:
     tools = rpc("tools/list")["result"]["tools"]
     print(f"tools/list OK  -> {len(tools)} tools: {', '.join(sorted(t['name'] for t in tools))}\n")
 
-    print("tools/call list_runs(limit=3) ...")
-    r = rpc("tools/call", {"name": "list_runs", "arguments": {"limit": 3}})
-    res = r.get("result", {})
-    if res.get("isError"):
-        print("  ERROR from tool:", res["content"][0]["text"][:400])
-    else:
+    names = {t["name"] for t in tools}
+    connected = "list_runs" in names
+
+    def call(tool, args, describe):
+        print(f"tools/call {tool}({args}) ...")
+        res = rpc("tools/call", {"name": tool, "arguments": args}).get("result", {})
+        if res.get("isError"):
+            print("  ERROR from tool:", res["content"][0]["text"][:400])
+            return
         payload = res.get("structuredContent", {}).get("result")
         if payload is None:
             payload = res.get("content", [{}])[0].get("text", "")
-        runs = payload if isinstance(payload, list) else json.loads(payload or "[]")
-        print(f"  OK -> {len(runs)} run(s) returned")
-        for run in runs[:3]:
-            print(f"     - {run.get('name')}  {run.get('phase', '')}")
+        describe(payload)
+
+    # Search works with no cluster at all, so it is always exercised.
+    call("search_flyte_sdk_examples", {"pattern": "TaskEnvironment"},
+         lambda p: print(f"  OK -> {len(str(p))} chars, "
+                         f"{'found matches' if 'TaskEnvironment' in str(p) else 'NO MATCHES'}"))
+
+    if connected:
+        call("list_runs", {"limit": 3},
+             lambda p: print(f"  OK -> {len(p if isinstance(p, list) else json.loads(p or '[]'))} run(s)"))
+    else:
+        print("\nnot connected to a cluster -- control-plane tools are not offered.")
+        print("Set a Flyte config (project + domain) and rerun to exercise list_runs.")
 finally:
     proc.stdin.close()
     try:
