@@ -242,20 +242,17 @@ async def process(data: dict) -> dict:
 
 ### Using MCP to inspect runs
 
-```
-Use flyte_mcp_list_runs(task_name="<task_name>", limit=50)
-to find runs for performance analysis.
+If Flyte MCP tools are available, use them to list a task's recent runs for performance
+analysis, fetch a run's metadata (status, duration), and read its inputs and outputs.
+The Flyte MCP server exposes this directly. Do not hardcode tool names — MCP
+clients namespace them differently (Claude Code renders them as
+`mcp__plugin_flyte_flyte-cluster__<tool>`), and the server describes its own tools and
+parameters via `tools/list`. Read them from there.
 
-Use flyte_mcp_get_run(name="<run_name>")
-to get run metadata (status, duration, etc.).
-
-Use flyte_mcp_get_run_io(name="<run_name>")
-to get inputs/outputs of a run for validation.
-```
 
 ### Performance analysis checklist
 
-1. **Check run duration** — use `flyte_mcp_get_run` to see `durationMs`
+1. **Check run duration** — fetch the run's metadata and read `durationMs`
 2. **Check cache status** — `CACHE_HIT` vs `CACHE_MISS` in run metadata
 3. **Check resource utilization** — compare requested vs actual usage
 4. **Check data transfer** — large inline I/O indicates format issues

@@ -21,16 +21,13 @@ Create Flyte 2 workflows, tasks, and apps from scratch using pure Python — no 
 
 ## Tool Priority
 
-1. **Flyte MCP** — if the agent harness has access to `flyte-mcp`, prefer its tools for:
-   - `flyte_mcp_get_task` — inspect a registered task's spec
-   - `flyte_mcp_list_tasks` — discover registered tasks
-   - `flyte_mcp_list_runs` — list past runs
-   - `flyte_mcp_get_run` / `flyte_mcp_wait_for_run` / `flyte_mcp_get_run_io` — interact with runs
-   - `flyte_mcp_run_task` — execute a task remotely
-   - `flyte_mcp_get_app` / `flyte_mcp_activate_app` / `flyte_mcp_deactivate_app` — manage apps
-   - `flyte_mcp_activate_trigger` / `flyte_mcp_deactivate_trigger` — manage triggers
-   - `flyte_mcp_build_image` — build container images
-   - `flyte_mcp_search_flyte_docs_examples` — search docs and SDK examples
+1. **Flyte MCP** — if the harness has Flyte MCP tools, prefer them for inspecting and
+   discovering registered tasks, listing and interacting with runs, executing a task
+   remotely, managing apps and triggers, and searching Flyte SDK examples and docs.
+
+   Read the exact names and parameters from the server's own `tools/list`; do not assume
+   them. Clients namespace MCP tools differently — Claude Code renders this plugin's as
+   `mcp__plugin_flyte_flyte-cluster__<tool>` and `mcp__plugin_flyte_flyte-docs__<tool>`.
 2. **`flyte` CLI** — for local commands: `flyte run`, `flyte deploy`, `flyte serve`, `flyte create config`, `flyte start devbox`
 3. **Python SDK** — for anything the CLI/MCP can't do (custom task environments, type transformers, dynamic workflows, programmatic run control)
 
@@ -385,34 +382,22 @@ flyte run pipeline.py main --data '[1,2,3]'
 
 ### Discovering registered tasks
 
-```
-Use flyte_mcp_list_tasks(project="flytesnacks", domain="development")
-to find tasks available for re-use or inspection.
-```
+Listing registered tasks for a project and domain is available as an MCP tool, for finding
+tasks to re-use or inspect.
 
 ### Running a task remotely
 
-```
-Use flyte_mcp_run_task(project="flytesnacks", domain="development",
-    name="task_name", version="auto", inputs={"x": 5})
-to execute a registered task.
-```
+Executing a registered task is available as an MCP tool, taking project, domain, task
+name, version, and inputs.
 
 ### Inspecting run results
 
-```
-Use flyte_mcp_get_run_io(name="<run_name>")
-to get inputs/outputs of a run.
-Use flyte_mcp_wait_for_run(name="<run_name>")
-to poll until a run completes.
-```
+Reading a run's inputs and outputs, and polling until a run completes, are both available
+as MCP tools taking the run name. The Flyte MCP server exposes this directly. Do not hardcode tool names — MCP
+clients namespace them differently (Claude Code renders them as
+`mcp__plugin_flyte_flyte-cluster__<tool>`), and the server describes its own tools and
+parameters via `tools/list`. Read them from there.
 
-### Building images
-
-```
-Use flyte_mcp_build_image(path="./", requirements_txt="requirements.txt")
-to build a container image for task deployment.
-```
 
 ## Anti-Patterns to Avoid
 

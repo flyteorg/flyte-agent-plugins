@@ -375,26 +375,15 @@ async def throughput_test(
 
 ## Testing with Flyte MCP
 
-### Inspecting past run outputs
+### Inspecting runs with MCP
 
-```
-Use flyte_mcp_get_run_io(name="<run_name>")
-to check the inputs and outputs of a past run for validation.
-```
+If Flyte MCP tools are available, use them to read a past run's inputs and outputs for
+validation, list recent runs for a task to compare against, and block until a run finishes
+before checking its status. The Flyte MCP server exposes this directly. Do not hardcode tool names — MCP
+clients namespace them differently (Claude Code renders them as
+`mcp__plugin_flyte_flyte-cluster__<tool>`), and the server describes its own tools and
+parameters via `tools/list`. Read them from there.
 
-### Listing runs for comparison
-
-```
-Use flyte_mcp_list_runs(task_name="<task_name>", limit=10)
-to find recent runs for comparison.
-```
-
-### Watching a run complete
-
-```
-Use flyte_mcp_wait_for_run(name="<run_name>")
-to block until a run finishes, then check its status.
-```
 
 ## pytest Configuration
 

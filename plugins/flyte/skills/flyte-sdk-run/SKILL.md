@@ -21,14 +21,15 @@ Run workflows, interact with runs, and manage the execution lifecycle.
 
 ## Tool Priority
 
-1. **Flyte MCP** — if available, prefer for run interaction:
-   - `flyte_mcp_list_runs` — list runs
-   - `flyte_mcp_get_run` — get run details
-   - `flyte_mcp_wait_for_run` — poll until complete
-   - `flyte_mcp_get_run_io` — get run inputs/outputs
-   - `flyte_mcp_run_task` — execute a task
-   - `flyte_mcp_abort_run` — cancel a run
-2. **`flyte` CLI** — for local run commands
+1. **Flyte MCP** — if the harness has Flyte MCP tools, prefer them over shelling out to
+   the CLI. They cover listing runs, fetching run details and inputs/outputs, polling to
+   completion, executing a task, and aborting a run, and they return structured data
+   instead of text you have to parse.
+
+   Read the exact names and parameters from the server's own `tools/list`; do not assume
+   them. Clients namespace MCP tools differently — Claude Code renders this plugin's as
+   `mcp__plugin_flyte_flyte-cluster__<tool>`.
+2. **`flyte` CLI** — for local run commands, and anything MCP does not expose
 3. **Python SDK** — for programmatic run control
 
 ## Running Workflows
@@ -121,19 +122,13 @@ flyte run pipeline.py main --data-file /path/to/data.parquet
 
 ### Using Flyte MCP
 
-```
-# List recent runs
-flyte_mcp_list_runs(task_name="<task_name>", limit=10)
+If Flyte MCP tools are available, prefer them for all of the above — listing runs,
+fetching a run's details, polling until it completes, and reading its inputs and outputs.
+The Flyte MCP server exposes this directly. Do not hardcode tool names — MCP
+clients namespace them differently (Claude Code renders them as
+`mcp__plugin_flyte_flyte-cluster__<tool>`), and the server describes its own tools and
+parameters via `tools/list`. Read them from there.
 
-# Get run details
-flyte_mcp_get_run(name="<run_name>")
-
-# Wait for run to complete
-flyte_mcp_wait_for_run(name="<run_name>", poll_interval_s=5, timeout_s=3600)
-
-# Get run inputs/outputs
-flyte_mcp_get_run_io(name="<run_name>")
-```
 
 ### Using CLI
 
@@ -253,16 +248,12 @@ flyte run --task-name preprocess --project flytesnacks --domain development \
 
 ### Using Flyte MCP
 
-```
-# Run a registered task
-flyte_mcp_run_task(
-    project="flytesnacks",
-    domain="development",
-    name="task_name",
-    version="auto",
-    inputs={"data": [1, 2, 3]}
-)
-```
+Executing a registered task is available as an MCP tool, taking project, domain, task name,
+version, and inputs. The Flyte MCP server exposes this directly. Do not hardcode tool names — MCP
+clients namespace them differently (Claude Code renders them as
+`mcp__plugin_flyte_flyte-cluster__<tool>`), and the server describes its own tools and
+parameters via `tools/list`. Read them from there.
+
 
 ## Run Context Configuration
 
@@ -319,10 +310,11 @@ flyte.abort(result)
 
 ### Using Flyte MCP
 
-```
-# Abort a run
-flyte_mcp_abort_run(name="<run_name>")
-```
+Aborting a run is available as an MCP tool, taking the run name. The Flyte MCP server exposes this directly. Do not hardcode tool names — MCP
+clients namespace them differently (Claude Code renders them as
+`mcp__plugin_flyte_flyte-cluster__<tool>`), and the server describes its own tools and
+parameters via `tools/list`. Read them from there.
+
 
 ## Programmatic Abort from Within a Task
 

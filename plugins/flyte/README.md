@@ -40,13 +40,6 @@ two bundled MCP servers.
 - **`flyte-sdk-ml`** — ML workload patterns (training, HPO, experiment tracking, evaluation,
   batch/real-time inference, monitoring).
 
-### Tooling / Integration
-
-- **`flyte-mcp-server`** — decide when to drive Flyte through MCP vs. the `flyte` CLI, and
-  build your own MCP server with `FlyteMCPAppEnvironment` (transports, tool/allowlist
-  scoping, deploying it for a team). For the servers this plugin already bundles, see
-  [Bundled MCP servers](#bundled-mcp-servers) below.
-
 ## Bundled MCP servers
 
 **Claude Code only.** The servers live in `.mcp.json`, which Claude Code reads by
@@ -96,8 +89,10 @@ plugin installation, not `/mcp`. So `FLYTE_MCP_LOCAL_SEARCH` moves search into
 `flyte-cluster` but does not un-declare `flyte-docs` — suppressing that needs a
 `deniedMcpServers` entry or disabling the plugin.
 
-To build and deploy an MCP server of your own, and to decide when a job belongs in MCP
-rather than the `flyte` CLI, see the `flyte-mcp-server` skill.
+To build an MCP server of your own — with allowlists, auth, and a shared endpoint for a
+team — ask the `flyte-docs` search tools for `FlyteMCPAppEnvironment`; they return the
+canonical `flyte_mcp_app.py` and `flyte_mcp_app_filtered.py` examples straight from the
+flyte-sdk repo, which stay current as the SDK changes.
 
 ## Install (Claude Code plugin marketplace)
 

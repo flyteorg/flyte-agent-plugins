@@ -3,7 +3,7 @@
 A [Claude Code](https://docs.claude.com/en/docs/claude-code) plugin marketplace for
 working with [Flyte](https://flyte.org).
 
-Everything ships in a single `flyte` plugin: 15 skills, plus two **MCP servers** that let
+Everything ships in a single `flyte` plugin: 14 skills, plus two **MCP servers** that let
 Claude search Flyte docs and act on your own cluster — see
 [Bundled MCP servers](#bundled-mcp-servers).
 
@@ -44,11 +44,11 @@ frontmatter), so they work in any harness that supports the standard.
 
 | Harness | Skills | MCP servers |
 |---|---|---|
-| Claude Code | all 15 | both, automatically |
-| Codex CLI | all 15 | none — add manually |
+| Claude Code | all 14 | both, automatically |
+| Codex CLI | all 14 | none — add manually |
 | Hermes | per-skill | none — add manually |
-| opencode | all 15 | none — add manually |
-| pi | all 15 | none — add manually |
+| opencode | all 14 | none — add manually |
+| pi | all 14 | none — add manually |
 
 ### OpenAI Codex CLI
 
@@ -133,12 +133,6 @@ pi install git:github.com/flyteorg/flyte-agent-plugins@<tag>         # pinned to
 | [`flyte-sdk-agent`](plugins/flyte/skills/flyte-sdk-agent) | Builds durable agents with Flyte 2 — ReAct patterns, Plan-and-Execute, LangGraph/PydanticAI/OpenAI Agents integration, agent memory, MCP tool integration. For: agent building, tool calling, memory, chat UI. |
 | [`flyte-sdk-data`](plugins/flyte/skills/flyte-sdk-data) | Handles data engineering patterns: ETL pipelines, data processing, data quality checks, fanout/map tasks, conditions, dynamic workflows, and batch data transformations. For: ETL, Parquet, CSV, JsonlFile/Dir, schema validation. |
 | [`flyte-sdk-ml`](plugins/flyte/skills/flyte-sdk-ml) | Handles ML workload patterns: model training, hyperparameter optimization, experiment tracking, model evaluation and selection, batch inference, real-time serving, and model monitoring. For: PyTorch, scikit-learn, HuggingFace, GPU, drift detection. |
-
-### Tooling / Integration
-
-| Skill | Description |
-|-------|-------------|
-| [`flyte-mcp-server`](plugins/flyte/skills/flyte-mcp-server) | Decide when to drive Flyte through MCP tools vs. the `flyte` CLI, and build your own MCP server with `FlyteMCPAppEnvironment` — transports, tool-group/tool/allowlist scoping, deploying it for a team, and connecting clients. (For the servers this plugin already bundles, see [Bundled MCP servers](#bundled-mcp-servers).) |
 
 Example:
 
