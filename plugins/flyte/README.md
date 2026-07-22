@@ -47,6 +47,11 @@ two bundled MCP servers.
 
 ## Bundled MCP servers
 
+**Claude Code only.** The servers live in `.mcp.json`, which Claude Code reads by
+convention; Codex, Hermes, opencode, and pi install the skills and nothing else. They all
+support MCP, so you can add these by hand — see
+[Adding the MCP servers elsewhere](../../README.md#adding-the-mcp-servers-elsewhere).
+
 The plugin's `.mcp.json` declares **two MCP servers**, split so nothing is duplicated:
 
 - **`flyte-docs`** — hosted HTTP, 3 `search` tools over Flyte SDK examples, docs examples,

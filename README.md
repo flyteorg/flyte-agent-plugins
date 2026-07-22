@@ -37,6 +37,19 @@ To switch to a different version later, remove and re-add the marketplace:
 The skills are plain [Agent Skills](https://agentskills.io) (`SKILL.md` + YAML
 frontmatter), so they work in any harness that supports the standard.
 
+> **Only Claude Code gets the MCP servers automatically.** They are declared in
+> `plugins/flyte/.mcp.json`, which Claude Code reads by convention. Every other harness
+> installs the **skills only** — you can still wire the servers up by hand in a few lines,
+> see [Adding the MCP servers elsewhere](#adding-the-mcp-servers-elsewhere).
+
+| Harness | Skills | MCP servers |
+|---|---|---|
+| Claude Code | all 15 | both, automatically |
+| Codex CLI | all 15 | none — add manually |
+| Hermes | per-skill | none — add manually |
+| opencode | all 15 | none — add manually |
+| pi | all 15 | none — add manually |
+
 ### OpenAI Codex CLI
 
 Codex reads this repo's marketplace catalog and the per-plugin
@@ -47,6 +60,13 @@ codex plugin marketplace add flyteorg/flyte-agent-plugins            # or --ref 
 ```
 
 Then browse and install the plugins via `/plugins` inside Codex.
+
+Codex plugins *can* bundle MCP servers (via an `mcpServers` field pointing at an
+`.mcp.json`), but this one deliberately does not: our `.mcp.json` uses
+`${CLAUDE_PLUGIN_ROOT}` to locate the local launcher script, and Codex does not expand it
+([openai/codex#22842](https://github.com/openai/codex/issues/22842)), so the local server
+would fail to start. Add the servers manually instead — the hosted one needs no path and
+works fine.
 
 ### Hermes
 
@@ -158,8 +178,49 @@ python3 scripts/smoke_test_mcp.py
 
 Override the automatic tool choice with `FLYTE_MCP_TOOL_GROUPS` / `FLYTE_MCP_TOOLS`, and
 scope with `FLYTE_MCP_CONFIG`, `FLYTE_MCP_PROJECT`, `FLYTE_MCP_DOMAIN`,
-`FLYTE_MCP_{TASK,APP,TRIGGER}_ALLOWLIST`, or `FLYTE_MCP_NO_SEARCH` — see the
-[`flyte-mcp-server`](plugins/flyte/skills/flyte-mcp-server) skill.
+`FLYTE_MCP_{TASK,APP,TRIGGER}_ALLOWLIST`, or `FLYTE_MCP_LOCAL_SEARCH` — see the plugin
+[README](plugins/flyte/README.md).
+
+### Adding the MCP servers elsewhere
+
+Codex, Hermes, opencode, and pi all support MCP — this plugin just doesn't configure it
+for them. Wiring it up yourself is a few lines.
+
+**`flyte-docs`** is plain remote HTTP with no auth and no local dependency, so it drops
+into any harness:
+
+```toml
+# Codex — ~/.codex/config.toml
+[mcp_servers.flyte-docs]
+url = "https://flyte-mcp.apps.demo.hosted.unionai.cloud/flyte-mcp/mcp"
+```
+
+```json
+// opencode — opencode.json
+{ "mcp": { "flyte-docs": { "type": "remote",
+  "url": "https://flyte-mcp.apps.demo.hosted.unionai.cloud/flyte-mcp/mcp",
+  "enabled": true } } }
+```
+
+```yaml
+# Hermes — ~/.hermes/config.yaml
+mcp_servers:
+  flyte-docs:
+    url: "https://flyte-mcp.apps.demo.hosted.unionai.cloud/flyte-mcp/mcp"
+```
+
+pi uses the same `mcpServers` shape in `~/.pi/agent/mcp.json`.
+
+**`flyte-cluster`** is a local stdio process, so point your harness at the launcher script
+with an absolute path — there is no `${CLAUDE_PLUGIN_ROOT}` outside Claude Code:
+
+```
+uv run --quiet --no-project /abs/path/to/plugins/flyte/scripts/flyte_mcp_stdio.py
+```
+
+Once [flyte-sdk#1319](https://github.com/flyteorg/flyte-sdk/pull/1319) ships, that becomes
+`uvx --from "flyte[mcp]" flyte-mcp --transport stdio` — no path, no script, portable
+everywhere.
 
 ## Layout
 
