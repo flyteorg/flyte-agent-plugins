@@ -21,11 +21,28 @@ control-plane tools appear on their own once they are logged in.
 Nothing here is tenant-specific: ``flyte.init_from_config()`` performs the SDK's normal
 config discovery, so the tools act on the same control plane your ``flyte`` CLI talks to.
 
-Why this file exists rather than calling the SDK's entry point: ``flyte[mcp]`` <= 2.5.11
-has no working stdio transport -- ``MCPAppEnvironment`` accepts ``transport="stdio"`` but
-``__post_init__`` builds the Starlette app and points ``_server`` at uvicorn for every
-value, so "stdio" silently serves HTTP. flyteorg/flyte-sdk#1319 fixes that upstream; once
-released, ``.mcp.json`` can call ``flyte-mcp --transport stdio`` and this file goes away.
+Why this file exists rather than ``.mcp.json`` just invoking the SDK's own ``flyte-mcp``
+entry point -- two reasons, one temporary and one not:
+
+1. *Temporary.* ``flyte[mcp]`` <= 2.5.11 has no working stdio transport.
+   ``MCPAppEnvironment`` accepts ``transport="stdio"`` but ``__post_init__`` builds the
+   Starlette app and points ``_server`` at uvicorn for every value, so "stdio" silently
+   serves HTTP. flyteorg/flyte-sdk#1319 fixes that; it does not remove the need for this
+   file.
+
+2. *Ongoing.* ``flyte-mcp`` cannot express what this server does. It has no
+   ``--project``/``--domain``, no allowlist flags, and no notion of degrading to the search
+   tools when no cluster is reachable -- it initializes unconditionally and leaves the
+   control-plane tools to fail at call time. The degrade-vs-fail default differs on
+   purpose: this server is started automatically by an MCP client for someone who may not
+   even have a cluster, whereas someone typing ``flyte-mcp`` almost certainly has one and
+   is better served by a loud failure.
+
+Retiring this file therefore needs the CLI to grow ``--project``, ``--domain``, the three
+allowlist flags, and an explicit opt-in such as ``--fallback-tool-groups search``. At that
+point ``.mcp.json`` can call ``flyte-mcp`` directly, which also drops the
+``${CLAUDE_PLUGIN_ROOT}`` path that currently keeps the bundled server Claude Code-only
+(Codex does not expand it -- openai/codex#22842).
 
 Configuration is read from the environment, because this file is plugin-managed and gets
 overwritten on update:
