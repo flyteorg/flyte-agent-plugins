@@ -42,8 +42,10 @@ two bundled MCP servers.
 
 ### Tooling / Integration
 
-- **`flyte-mcp-server`** — set up, run, scope, and connect the Flyte MCP server (including
-  the one bundled with this plugin), and decide between MCP and the `flyte` CLI.
+- **`flyte-mcp-server`** — decide when to drive Flyte through MCP vs. the `flyte` CLI, and
+  build your own MCP server with `FlyteMCPAppEnvironment` (transports, tool/allowlist
+  scoping, deploying it for a team). For the servers this plugin already bundles, see
+  [Bundled MCP servers](#bundled-mcp-servers) below.
 
 ## Bundled MCP servers
 
@@ -100,7 +102,7 @@ rather than the `flyte` CLI, see the `flyte-mcp-server` skill.
 
 ```
 /plugin marketplace add flyteorg/flyte-agent-plugins
-/plugin install flyte@flyte
+/plugin install flyte@flyte-agent-plugins
 ```
 
 Then ask Claude to, e.g., "deploy a Flyte v2 cluster on AWS", "deploy Flyte on kind", or
@@ -112,10 +114,10 @@ and append `#<ref>` — a tag or branch name (not a bare commit SHA; tag the com
 
 ```
 /plugin marketplace add https://github.com/flyteorg/flyte-agent-plugins.git#<tag-or-branch>
-/plugin install flyte@flyte
+/plugin install flyte@flyte-agent-plugins
 ```
 
-(To change the pinned version later, `/plugin marketplace remove flyte` and re-add
+(To change the pinned version later, `/plugin marketplace remove flyte-agent-plugins` and re-add
 with the new ref.)
 
 ## Install (other agent harnesses)

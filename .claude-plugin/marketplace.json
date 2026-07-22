@@ -1,5 +1,5 @@
 {
-  "name": "flyte",
+  "name": "flyte-agent-plugins",
   "owner": {
     "name": "flyteorg",
     "url": "https://github.com/flyteorg/flyte-agent-plugins"

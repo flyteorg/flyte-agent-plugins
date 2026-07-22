@@ -11,7 +11,7 @@ Claude search Flyte docs and act on your own cluster — see
 
 ```
 /plugin marketplace add flyteorg/flyte-agent-plugins
-/plugin install flyte@flyte
+/plugin install flyte@flyte-agent-plugins
 ```
 
 ### Install a specific version
@@ -22,13 +22,13 @@ name** (bare commit SHAs are not supported; to pin an exact commit, tag it first
 
 ```
 /plugin marketplace add https://github.com/flyteorg/flyte-agent-plugins.git#<tag-or-branch>
-/plugin install flyte@flyte
+/plugin install flyte@flyte-agent-plugins
 ```
 
 To switch to a different version later, remove and re-add the marketplace:
 
 ```
-/plugin marketplace remove flyte
+/plugin marketplace remove flyte-agent-plugins
 /plugin marketplace add https://github.com/flyteorg/flyte-agent-plugins.git#<other-ref>
 ```
 
@@ -143,7 +143,7 @@ pi install git:github.com/flyteorg/flyte-agent-plugins@<tag>         # pinned to
 Example:
 
 ```
-/plugin install flyte@flyte
+/plugin install flyte@flyte-agent-plugins
 ```
 
 Then ask Claude to "deploy a Flyte v2 cluster on AWS", or invoke a skill directly with
