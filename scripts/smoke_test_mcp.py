@@ -9,8 +9,11 @@ curl its ``/health`` endpoint instead.
 
     python3 scripts/smoke_test_mcp.py [plugin_dir]
 
-Requires a Flyte config with ``project`` and ``domain`` set; without them the server
-refuses to start and says so.
+Works with or without a cluster: given a Flyte config with ``project`` and ``domain`` it
+exercises a real read-only control-plane call (``list_runs``); without one it reports that
+the control-plane tools are simply not offered. The local server serves the search tools
+only when ``FLYTE_MCP_LOCAL_SEARCH`` is set -- otherwise search comes from the hosted
+``flyte-docs`` server, which this test does not spawn.
 """
 
 import json
@@ -67,7 +70,11 @@ try:
 
     def call(tool, args, describe):
         print(f"tools/call {tool}({args}) ...")
-        res = rpc("tools/call", {"name": tool, "arguments": args}).get("result", {})
+        resp = rpc("tools/call", {"name": tool, "arguments": args})
+        if "error" in resp:
+            print("  RPC ERROR:", resp["error"].get("message", resp["error"]))
+            return
+        res = resp.get("result", {})
         if res.get("isError"):
             print("  ERROR from tool:", res["content"][0]["text"][:400])
             return
@@ -76,10 +83,14 @@ try:
             payload = res.get("content", [{}])[0].get("text", "")
         describe(payload)
 
-    # Search works with no cluster at all, so it is always exercised.
-    call("search_flyte_sdk_examples", {"pattern": "TaskEnvironment"},
-         lambda p: print(f"  OK -> {len(str(p))} chars, "
-                         f"{'found matches' if 'TaskEnvironment' in str(p) else 'NO MATCHES'}"))
+    # The local server serves search only under FLYTE_MCP_LOCAL_SEARCH; by default search
+    # comes from the hosted flyte-docs server, which this test does not spawn.
+    if "search_flyte_sdk_examples" in names:
+        call("search_flyte_sdk_examples", {"pattern": "TaskEnvironment"},
+             lambda p: print(f"  OK -> {len(str(p))} chars, "
+                             f"{'found matches' if 'TaskEnvironment' in str(p) else 'NO MATCHES'}"))
+    else:
+        print("search not served locally (set FLYTE_MCP_LOCAL_SEARCH=1 to exercise it here).")
 
     if connected:
         call("list_runs", {"limit": 3},
