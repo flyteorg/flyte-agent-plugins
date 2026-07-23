@@ -17,7 +17,7 @@ Optimize Flyte 2 workflows for performance, cost, and reliability.
 | CLI API reference | https://www.union.ai/docs/v2/union/api-reference/flyte-cli/ |
 | flyte-sdk source | https://github.com/flyteorg/flyte-sdk |
 | Example code | https://github.com/unionai/unionai-examples |
-| Flyte MCP tools | Available via `flyte-mcp` server |
+| Flyte MCP tools | Available via the `flyte-cluster` and `flyte-docs` MCP servers |
 
 ## Optimization Strategy Overview
 
@@ -244,10 +244,6 @@ async def process(data: dict) -> dict:
 
 If Flyte MCP tools are available, use them to list a task's recent runs for performance
 analysis, fetch a run's metadata (status, duration), and read its inputs and outputs.
-The Flyte MCP server exposes this directly. Do not hardcode tool names — MCP
-clients namespace them differently (Claude Code renders them as
-`mcp__plugin_flyte_flyte-cluster__<tool>`), and the server describes its own tools and
-parameters via `tools/list`. Read them from there.
 
 
 ### Performance analysis checklist

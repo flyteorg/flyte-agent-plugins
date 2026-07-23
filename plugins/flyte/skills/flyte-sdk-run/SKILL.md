@@ -17,7 +17,7 @@ Run workflows, interact with runs, and manage the execution lifecycle.
 | CLI API reference | https://www.union.ai/docs/v2/union/api-reference/flyte-cli/ |
 | flyte-sdk source | https://github.com/flyteorg/flyte-sdk |
 | Example code | https://github.com/unionai/unionai-examples |
-| Flyte MCP tools | Available via `flyte-mcp` server |
+| Flyte MCP tools | Available via the `flyte-cluster` and `flyte-docs` MCP servers |
 
 ## Tool Priority
 
@@ -25,10 +25,6 @@ Run workflows, interact with runs, and manage the execution lifecycle.
    the CLI. They cover listing runs, fetching run details and inputs/outputs, polling to
    completion, executing a task, and aborting a run, and they return structured data
    instead of text you have to parse.
-
-   Read the exact names and parameters from the server's own `tools/list`; do not assume
-   them. Clients namespace MCP tools differently — Claude Code renders this plugin's as
-   `mcp__plugin_flyte_flyte-cluster__<tool>`.
 2. **`flyte` CLI** — for local run commands, and anything MCP does not expose
 3. **Python SDK** — for programmatic run control
 
@@ -124,10 +120,6 @@ flyte run pipeline.py main --data-file /path/to/data.parquet
 
 If Flyte MCP tools are available, prefer them for all of the above — listing runs,
 fetching a run's details, polling until it completes, and reading its inputs and outputs.
-The Flyte MCP server exposes this directly. Do not hardcode tool names — MCP
-clients namespace them differently (Claude Code renders them as
-`mcp__plugin_flyte_flyte-cluster__<tool>`), and the server describes its own tools and
-parameters via `tools/list`. Read them from there.
 
 
 ### Using CLI
@@ -249,10 +241,7 @@ flyte run --task-name preprocess --project flytesnacks --domain development \
 ### Using Flyte MCP
 
 Executing a registered task is available as an MCP tool, taking project, domain, task name,
-version, and inputs. The Flyte MCP server exposes this directly. Do not hardcode tool names — MCP
-clients namespace them differently (Claude Code renders them as
-`mcp__plugin_flyte_flyte-cluster__<tool>`), and the server describes its own tools and
-parameters via `tools/list`. Read them from there.
+version, and inputs.
 
 
 ## Run Context Configuration
@@ -310,10 +299,7 @@ flyte.abort(result)
 
 ### Using Flyte MCP
 
-Aborting a run is available as an MCP tool, taking the run name. The Flyte MCP server exposes this directly. Do not hardcode tool names — MCP
-clients namespace them differently (Claude Code renders them as
-`mcp__plugin_flyte_flyte-cluster__<tool>`), and the server describes its own tools and
-parameters via `tools/list`. Read them from there.
+Aborting a run is available as an MCP tool, taking the run name.
 
 
 ## Programmatic Abort from Within a Task

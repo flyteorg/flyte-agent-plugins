@@ -17,17 +17,13 @@ Create Flyte 2 workflows, tasks, and apps from scratch using pure Python — no 
 | CLI API reference | https://www.union.ai/docs/v2/union/api-reference/flyte-cli/ |
 | flyte-sdk source | https://github.com/flyteorg/flyte-sdk |
 | Example code | https://github.com/unionai/unionai-examples |
-| Flyte MCP tools | Available via `flyte-mcp` server (task runs, image builds, app management) |
+| Flyte MCP tools | Available via the `flyte-cluster` and `flyte-docs` MCP servers |
 
 ## Tool Priority
 
 1. **Flyte MCP** — if the harness has Flyte MCP tools, prefer them for inspecting and
    discovering registered tasks, listing and interacting with runs, executing a task
    remotely, managing apps and triggers, and searching Flyte SDK examples and docs.
-
-   Read the exact names and parameters from the server's own `tools/list`; do not assume
-   them. Clients namespace MCP tools differently — Claude Code renders this plugin's as
-   `mcp__plugin_flyte_flyte-cluster__<tool>` and `mcp__plugin_flyte_flyte-docs__<tool>`.
 2. **`flyte` CLI** — for local commands: `flyte run`, `flyte deploy`, `flyte serve`, `flyte create config`, `flyte start devbox`
 3. **Python SDK** — for anything the CLI/MCP can't do (custom task environments, type transformers, dynamic workflows, programmatic run control)
 
@@ -393,10 +389,7 @@ name, version, and inputs.
 ### Inspecting run results
 
 Reading a run's inputs and outputs, and polling until a run completes, are both available
-as MCP tools taking the run name. The Flyte MCP server exposes this directly. Do not hardcode tool names — MCP
-clients namespace them differently (Claude Code renders them as
-`mcp__plugin_flyte_flyte-cluster__<tool>`), and the server describes its own tools and
-parameters via `tools/list`. Read them from there.
+as MCP tools taking the run name.
 
 
 ## Anti-Patterns to Avoid
