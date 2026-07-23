@@ -19,6 +19,8 @@ Create Flyte 2 workflows, tasks, and apps from scratch using pure Python — no 
 | Example code | https://github.com/unionai/unionai-examples |
 | Flyte MCP tools | Available via the `flyte-cluster` and `flyte-docs` MCP servers |
 
+**Ground unfamiliar APIs in real examples.** When unsure of a current Flyte 2 API, or for a pattern not shown below, and the `flyte-docs` search tools are available, search them first — by exact symbol (`TaskEnvironment`, `flyte.File`, `map_task`), since matching is literal substring, not semantic — then adapt a real example rather than inventing one, and cite the file or section you pulled it from. (Flyte 2 is not `flytekit`; priors are often wrong.)
+
 ## Tool Priority
 
 1. **Flyte MCP** — if the harness has Flyte MCP tools, prefer them for inspecting and
