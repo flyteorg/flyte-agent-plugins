@@ -10,7 +10,7 @@ default_tiers: [static, trajectory]
 
 # Where scenario specs live (relative to repo root) and how to find a skill dir.
 scenarios_dir: evals/scenarios
-skill_dir_template: "plugins/flyte-skills/skills/{skill}"
+skill_dir_template: "plugins/flyte/skills/{skill}"
 
 # Changing any of these paths means the ENGINE changed -> run the whole suite,
 # not just the scenarios for a changed skill (see evals/select.py).
@@ -21,8 +21,8 @@ shared_infra_globs:
   - "evals/report.py"
   - "evals/manifest.yaml"
   - "evals/pyproject.toml"
-  - "plugins/flyte-skills/.claude-plugin/**"
-  - "plugins/flyte-skills/.codex-plugin/**"
+  - "plugins/flyte/.claude-plugin/**"
+  - "plugins/flyte/.codex-plugin/**"
 
 # Deploy skills that get a REAL kind-in-Docker smoke test on a privileged
 # GitHub Actions runner (see evals/kind_smoke/run.sh). All other deploy skills

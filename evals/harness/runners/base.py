@@ -91,7 +91,7 @@ def snapshot_files(workspace: pathlib.Path, max_bytes: int = 200_000) -> dict[st
 
 def _repo_skill_dir(skill: str) -> pathlib.Path:
     from ..spec import REPO_ROOT
-    return REPO_ROOT / "plugins" / "flyte-skills" / "skills" / skill
+    return REPO_ROOT / "plugins" / "flyte" / "skills" / skill
 
 
 def sh(cmd: list[str], cwd: pathlib.Path, env: dict[str, str], timeout: int = 600

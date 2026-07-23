@@ -1,7 +1,7 @@
 """Map changed files -> the subset of scenarios to run.
 
 Used by CI to run only what a PR affects:
-  - a changed `plugins/flyte-skills/skills/<skill>/**` -> that skill's scenarios
+  - a changed `plugins/flyte/skills/<skill>/**` -> that skill's scenarios
   - a change to engine/shared-infra paths (manifest.shared_infra_globs) -> run ALL
   - flags whether the kind DinD smoke and the real tier are in scope
 
@@ -26,7 +26,7 @@ import sys
 
 from evals.harness.spec import Manifest, load_scenarios, scenarios_by_skill
 
-SKILL_PATH_RE = re.compile(r"plugins/flyte-skills/skills/([^/]+)/")
+SKILL_PATH_RE = re.compile(r"plugins/flyte/skills/([^/]+)/")
 
 
 def changed_from_git(base: str, repo_root: pathlib.Path) -> list[str]:

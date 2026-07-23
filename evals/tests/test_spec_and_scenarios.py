@@ -7,7 +7,7 @@ import pytest
 
 from evals.harness.spec import REPO_ROOT, Scenario, load_scenarios, scenarios_by_skill
 
-SKILLS_DIR = REPO_ROOT / "plugins" / "flyte-skills" / "skills"
+SKILLS_DIR = REPO_ROOT / "plugins" / "flyte" / "skills"
 
 
 def test_all_scenarios_load():

@@ -131,7 +131,7 @@ class Manifest:
             harnesses=tuple(d.get("harnesses") or VALID_HARNESSES),
             default_tiers=tuple(d.get("default_tiers") or ("static", "trajectory")),
             scenarios_dir=d.get("scenarios_dir", "evals/scenarios"),
-            skill_dir_template=d.get("skill_dir_template", "plugins/flyte-skills/skills/{skill}"),
+            skill_dir_template=d.get("skill_dir_template", "plugins/flyte/skills/{skill}"),
             shared_infra_globs=tuple(d.get("shared_infra_globs") or ()),
             kind_smoke_skills=tuple(d.get("kind_smoke_skills") or ()),
             sdk_real_skills=tuple(d.get("sdk_real_skills") or ()),

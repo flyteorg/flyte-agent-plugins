@@ -105,7 +105,7 @@ class ScenarioResult:
 
 
 def evaluate_static(scenario: Scenario) -> ScenarioResult:
-    skill_dir = REPO_ROOT / "plugins" / "flyte-skills" / "skills" / scenario.skill
+    skill_dir = REPO_ROOT / "plugins" / "flyte" / "skills" / scenario.skill
     results = lint_skill(skill_dir)
     arm = ArmResult(arm="treatment", checks=results)
     return ScenarioResult(scenario.id, scenario.skill, "static", harness=None,
