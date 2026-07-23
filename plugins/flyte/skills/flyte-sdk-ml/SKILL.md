@@ -17,7 +17,9 @@ Build ML training, HPO, evaluation, and inference pipelines with Flyte 2.
 | CLI API reference | https://www.union.ai/docs/v2/union/api-reference/flyte-cli/ |
 | flyte-sdk source | https://github.com/flyteorg/flyte-sdk |
 | Example code | https://github.com/unionai/unionai-examples |
-| Flyte MCP tools | Available via `flyte-mcp` server |
+| Flyte MCP tools | Available via the `flyte-cluster` and `flyte-docs` MCP servers |
+
+**Ground unfamiliar APIs in real examples.** When unsure of a current Flyte 2 API, or for a pattern not shown below, and the `flyte-docs` search tools are available, search them first — by exact symbol (`TaskEnvironment`, `flyte.File`, `map_task`), since matching is literal substring, not semantic — then adapt a real example rather than inventing one, and cite the file or section you pulled it from. (Flyte 2 is not `flytekit`; priors are often wrong.)
 
 ## Model Training
 

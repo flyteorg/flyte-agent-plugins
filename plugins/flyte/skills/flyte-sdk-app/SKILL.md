@@ -17,7 +17,7 @@ Build and serve applications with Flyte 2.
 | CLI API reference | https://www.union.ai/docs/v2/union/api-reference/flyte-cli/ |
 | flyte-sdk source | https://github.com/flyteorg/flyte-sdk |
 | Example code | https://github.com/unionai/unionai-examples |
-| Flyte MCP tools | Available via `flyte-mcp` server |
+| Flyte MCP tools | Available via the `flyte-cluster` and `flyte-docs` MCP servers |
 
 ## App Types
 
@@ -334,16 +334,9 @@ flyte app get <app_name> --project flytesnacks --domain development
 
 ### Using Flyte MCP for app management
 
-```
-# Get app status
-flyte_mcp_get_app(name="<app_name>")
+Getting an app's status, activating it, and deactivating it are all available as MCP
+tools, each taking the app name.
 
-# Activate an app
-flyte_mcp_activate_app(name="<app_name>")
-
-# Deactivate an app
-flyte_mcp_deactivate_app(name="<app_name>")
-```
 
 ## App Parameters
 

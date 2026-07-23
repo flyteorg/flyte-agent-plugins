@@ -17,7 +17,7 @@ Build evaluation harnesses, unit tests, and validation pipelines for Flyte 2 wor
 | CLI API reference | https://www.union.ai/docs/v2/union/api-reference/flyte-cli/ |
 | flyte-sdk source | https://github.com/flyteorg/flyte-sdk |
 | Example code | https://github.com/unionai/unionai-examples |
-| Flyte MCP tools | Available via `flyte-mcp` server |
+| Flyte MCP tools | Available via the `flyte-cluster` and `flyte-docs` MCP servers |
 
 ## Testing Patterns
 
@@ -375,26 +375,12 @@ async def throughput_test(
 
 ## Testing with Flyte MCP
 
-### Inspecting past run outputs
+### Inspecting runs with MCP
 
-```
-Use flyte_mcp_get_run_io(name="<run_name>")
-to check the inputs and outputs of a past run for validation.
-```
+If Flyte MCP tools are available, use them to read a past run's inputs and outputs for
+validation, list recent runs for a task to compare against, and block until a run finishes
+before checking its status.
 
-### Listing runs for comparison
-
-```
-Use flyte_mcp_list_runs(task_name="<task_name>", limit=10)
-to find recent runs for comparison.
-```
-
-### Watching a run complete
-
-```
-Use flyte_mcp_wait_for_run(name="<run_name>")
-to block until a run finishes, then check its status.
-```
 
 ## pytest Configuration
 

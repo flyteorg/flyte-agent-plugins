@@ -17,18 +17,15 @@ Run workflows, interact with runs, and manage the execution lifecycle.
 | CLI API reference | https://www.union.ai/docs/v2/union/api-reference/flyte-cli/ |
 | flyte-sdk source | https://github.com/flyteorg/flyte-sdk |
 | Example code | https://github.com/unionai/unionai-examples |
-| Flyte MCP tools | Available via `flyte-mcp` server |
+| Flyte MCP tools | Available via the `flyte-cluster` and `flyte-docs` MCP servers |
 
 ## Tool Priority
 
-1. **Flyte MCP** — if available, prefer for run interaction:
-   - `flyte_mcp_list_runs` — list runs
-   - `flyte_mcp_get_run` — get run details
-   - `flyte_mcp_wait_for_run` — poll until complete
-   - `flyte_mcp_get_run_io` — get run inputs/outputs
-   - `flyte_mcp_run_task` — execute a task
-   - `flyte_mcp_abort_run` — cancel a run
-2. **`flyte` CLI** — for local run commands
+1. **Flyte MCP** — if the harness has Flyte MCP tools, prefer them over shelling out to
+   the CLI. They cover listing runs, fetching run details and inputs/outputs, polling to
+   completion, executing a task, and aborting a run, and they return structured data
+   instead of text you have to parse.
+2. **`flyte` CLI** — for local run commands, and anything MCP does not expose
 3. **Python SDK** — for programmatic run control
 
 ## Running Workflows
@@ -121,19 +118,9 @@ flyte run pipeline.py main --data-file /path/to/data.parquet
 
 ### Using Flyte MCP
 
-```
-# List recent runs
-flyte_mcp_list_runs(task_name="<task_name>", limit=10)
+If Flyte MCP tools are available, prefer them for all of the above — listing runs,
+fetching a run's details, polling until it completes, and reading its inputs and outputs.
 
-# Get run details
-flyte_mcp_get_run(name="<run_name>")
-
-# Wait for run to complete
-flyte_mcp_wait_for_run(name="<run_name>", poll_interval_s=5, timeout_s=3600)
-
-# Get run inputs/outputs
-flyte_mcp_get_run_io(name="<run_name>")
-```
 
 ### Using CLI
 
@@ -253,16 +240,9 @@ flyte run --task-name preprocess --project flytesnacks --domain development \
 
 ### Using Flyte MCP
 
-```
-# Run a registered task
-flyte_mcp_run_task(
-    project="flytesnacks",
-    domain="development",
-    name="task_name",
-    version="auto",
-    inputs={"data": [1, 2, 3]}
-)
-```
+Executing a registered task is available as an MCP tool, taking project, domain, task name,
+version, and inputs.
+
 
 ## Run Context Configuration
 
@@ -319,10 +299,8 @@ flyte.abort(result)
 
 ### Using Flyte MCP
 
-```
-# Abort a run
-flyte_mcp_abort_run(name="<run_name>")
-```
+Aborting a run is available as an MCP tool, taking the run name.
+
 
 ## Programmatic Abort from Within a Task
 

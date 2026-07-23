@@ -1,12 +1,12 @@
 {
-  "name": "flyte-skills",
-  "version": "0.0.3",
+  "name": "flyte",
+  "version": "0.0.5",
   "description": "Agent skills for working with Flyte.",
   "license": "Apache-2.0",
   "keywords": ["pi-package"],
   "pi": {
     "skills": [
-      "./plugins/flyte-skills/skills"
+      "./plugins/flyte/skills"
     ]
   }
 }

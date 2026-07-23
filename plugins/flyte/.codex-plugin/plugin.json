@@ -1,8 +1,6 @@
 {
-  "name": "flyte-skills",
+  "name": "flyte",
+  "version": "0.3.0",
   "description": "Skills for working with Flyte 2 — deploy Flyte v2 (flyte-binary) clusters on AWS or kind, and author, run, and operate Flyte workflows, apps, agents, data, and ML workloads with the SDK.",
-  "version": "0.1.0",
-  "author": {
-    "name": "flyteorg"
-  }
+  "skills": "./skills/"
 }

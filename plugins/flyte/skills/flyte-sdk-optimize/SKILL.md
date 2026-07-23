@@ -17,7 +17,7 @@ Optimize Flyte 2 workflows for performance, cost, and reliability.
 | CLI API reference | https://www.union.ai/docs/v2/union/api-reference/flyte-cli/ |
 | flyte-sdk source | https://github.com/flyteorg/flyte-sdk |
 | Example code | https://github.com/unionai/unionai-examples |
-| Flyte MCP tools | Available via `flyte-mcp` server |
+| Flyte MCP tools | Available via the `flyte-cluster` and `flyte-docs` MCP servers |
 
 ## Optimization Strategy Overview
 
@@ -242,20 +242,13 @@ async def process(data: dict) -> dict:
 
 ### Using MCP to inspect runs
 
-```
-Use flyte_mcp_list_runs(task_name="<task_name>", limit=50)
-to find runs for performance analysis.
+If Flyte MCP tools are available, use them to list a task's recent runs for performance
+analysis, fetch a run's metadata (status, duration), and read its inputs and outputs.
 
-Use flyte_mcp_get_run(name="<run_name>")
-to get run metadata (status, duration, etc.).
-
-Use flyte_mcp_get_run_io(name="<run_name>")
-to get inputs/outputs of a run for validation.
-```
 
 ### Performance analysis checklist
 
-1. **Check run duration** — use `flyte_mcp_get_run` to see `durationMs`
+1. **Check run duration** — fetch the run's metadata and read `durationMs`
 2. **Check cache status** — `CACHE_HIT` vs `CACHE_MISS` in run metadata
 3. **Check resource utilization** — compare requested vs actual usage
 4. **Check data transfer** — large inline I/O indicates format issues
