@@ -68,7 +68,7 @@ def _print_table(results: list[ScenarioResult]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="flyte-evals", description="Run flyte-skills evals locally")
+    ap = argparse.ArgumentParser(prog="flyte-evals", description="Run flyte-agent-plugin evals locally")
     ap.add_argument("--scenario", help="scenario id")
     ap.add_argument("--skill", help="filter by skill name")
     ap.add_argument("--tier", choices=["static", "trajectory", "real"], help="filter by tier")

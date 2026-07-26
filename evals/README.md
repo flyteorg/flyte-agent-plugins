@@ -1,6 +1,6 @@
-# flyte-skills eval harness
+# flyte agent plugin eval harness
 
-Automated testing & evaluation for the `flyte-skills` agent skills. It runs a real
+Automated testing & evaluation for the `flyte` agent skills. It runs a real
 agent harness (**opencode / pi / hermes**) against the union-hosted **GLM** endpoint,
 hands it a skill + a task, and scores what it produces — orchestrated as **Flyte
 workflows on `demo.hosted.unionai.cloud`**, with path-based selection so only the

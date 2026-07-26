@@ -1,8 +1,8 @@
 name: skill-evals
 
-# Runs the flyte-skills eval harness. On PRs it runs only the scenarios affected
-# by the changed files (see evals/select.py); nightly it runs the full matrix
-# including the `real` tier.
+# Runs the flyte-agent-plugin skills eval harness. On PRs it runs only the
+# scenarios affected by the changed files (see evals/select.py); nightly it runs
+# the full matrix including the `real` tier.
 on:
   pull_request:
     paths:

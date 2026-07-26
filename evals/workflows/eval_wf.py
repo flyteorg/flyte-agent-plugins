@@ -1,4 +1,4 @@
-"""Flyte orchestration of the flyte-skills eval harness.
+"""Flyte orchestration of the flyte-agent-plugin eval harness.
 
 Runs on demo.hosted.unionai.cloud (org demo / project flytesnacks / domain
 development, remote image builder — see evals/config/flyte.yaml). The workflow
@@ -21,7 +21,7 @@ import flyte
 from evals.workflows.images import eval_image
 
 env = flyte.TaskEnvironment(
-    name="flyte-skills-evals",
+    name="flyte-agent-plugin-evals",
     image=eval_image,
     resources=flyte.Resources(cpu="2", memory="4Gi"),
     secrets=[flyte.Secret(key="glm-api-key", as_env_var="GLM_API_KEY")],

@@ -22,7 +22,7 @@ def to_markdown(results: list[dict]) -> str:
     total = len(results)
     failed = [r for r in results if not r["passed"]]
     lines = [
-        f"### flyte-skills evals — {total - len(failed)}/{total} passing",
+        f"### flyte-agent-plugin evals — {total - len(failed)}/{total} passing",
         "",
         "| scenario | skill | harness | tier | pass | treat | ctrl | lift |",
         "|---|---|---|---|:--:|--:|--:|--:|",
@@ -71,14 +71,14 @@ def to_html(results: list[dict]) -> str:
         )
     passed = sum(1 for r in results if r["passed"])
     return f"""<!doctype html><meta charset=utf-8>
-<title>flyte-skills evals</title>
+<title>flyte-agent-plugin evals</title>
 <style>
  body{{font:14px/1.4 system-ui,sans-serif;margin:2rem}}
  table{{border-collapse:collapse;width:100%}}
  th,td{{border:1px solid #ddd;padding:6px 10px}}
  th{{background:#f4f4f5;text-align:left}}
 </style>
-<h1>flyte-skills evals — {passed}/{len(results)} passing</h1>
+<h1>flyte-agent-plugin evals — {passed}/{len(results)} passing</h1>
 <table>
 <thead><tr><th>scenario</th><th>skill</th><th>harness</th><th>tier</th>
 <th>pass</th><th>treatment</th><th>control</th><th>lift</th></tr></thead>

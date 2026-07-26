@@ -1,4 +1,4 @@
-# Top-level configuration for the flyte-skills eval harness.
+# Top-level configuration for the flyte-agent-plugin eval harness.
 # Scenario -> skill mapping is derived by scanning `scenarios_dir`; each scenario
 # file declares its own `skill`. This manifest holds the cross-cutting config.
 

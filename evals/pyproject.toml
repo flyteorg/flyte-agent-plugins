@@ -1,7 +1,7 @@
 [project]
-name = "flyte-skills-evals"
+name = "flyte-agent-plugin-evals"
 version = "0.0.1"
-description = "Testing & eval harness for the Flyte plugin skills."
+description = "Testing & eval harness for the Flyte agent plugin."
 requires-python = ">=3.10"
 dependencies = [
     "pyyaml>=6.0",
