@@ -126,17 +126,52 @@ EOF
 kubectl rollout status -n "$NS" deploy/pg --timeout=5m
 kubectl rollout status -n "$NS" deploy/minio --timeout=5m
 
+echo "==> create the object-store bucket in minio (the chart expects it to exist)"
+# The flyte-binary chart does not create the metadata/userdata bucket — with a
+# real S3/R2 backend the user pre-creates it, so mirror that for the throwaway
+# minio here, otherwise the control plane can't reach its bucket.
+kubectl run mc --rm -i --restart=Never -n "$NS" --image=minio/mc:latest --command -- \
+  sh -c "mc alias set m http://minio.${NS}.svc.cluster.local:9000 minio miniostorage && mc mb -p m/flyte"
+
 echo "==> install flyte-binary (per deploy-flyte-kind flyte-binary step)"
 helm repo add flyteorg https://flyteorg.github.io/flyte >/dev/null
-helm repo update >/dev/null
-# NOTE: values wiring (db + storage endpoints) mirrors the skill; kept minimal here.
+helm repo update flyteorg >/dev/null
+# Values wiring mirrors the skill's values-local.yaml. flyte-binary is v2, whose
+# schema nests db under configuration.database.postgres.* and storage creds under
+# configuration.storage.providerConfig.s3.* — the flat v1 keys are silently
+# ignored, which leaves the DB host at its 127.0.0.1 default and hangs the
+# wait-for-db init container forever. Point db at the in-cluster pg and storage
+# at the in-cluster minio.
+cat > "${TMPDIR:-/tmp}/fb-values.yaml" <<EOF
+configuration:
+  database:
+    postgres:
+      host: pg-postgresql.${NS}.svc.cluster.local
+      port: 5432
+      dbname: flyte
+      username: postgres
+      password: flyte
+      options: "sslmode=disable"
+  storage:
+    metadataContainer: flyte
+    userDataContainer: flyte
+    provider: s3
+    providerConfig:
+      s3:
+        region: us-east-1
+        disableSSL: true
+        v2Signing: true
+        endpoint: http://minio.${NS}.svc.cluster.local:9000
+        authType: accesskey
+        accessKey: minio
+        secretKey: miniostorage
+ingress:
+  create: false
+EOF
 helm upgrade --install flyte-binary flyteorg/flyte-binary -n "$NS" \
-  --set configuration.database.host="pg-postgresql.${NS}.svc.cluster.local" \
-  --set configuration.database.password=flyte \
-  --set configuration.storage.provider=s3 \
-  --wait --timeout 10m || true
+  -f "${TMPDIR:-/tmp}/fb-values.yaml" --wait --timeout 10m
 
-echo "==> assert flyte-binary pod is present"
+echo "==> assert flyte-binary pod is Ready"
 kubectl get pods -n "$NS"
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=flyte-binary \
   -n "$NS" --timeout=5m

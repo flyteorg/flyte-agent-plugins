@@ -61,13 +61,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install flyte>=2.5.0 pyyaml requests
-      - name: Configure Flyte auth
-        run: echo "auth via UNION_API_KEY secret"
-        env:
-          UNION_API_KEY: ${{ secrets.UNION_API_KEY }}
       - name: Run evals on demo.hosted
         env:
-          UNION_API_KEY: ${{ secrets.UNION_API_KEY }}
+          # The flyte v2 CLI authenticates to demo.hosted via an API key read from
+          # FLYTE_API_KEY, sourced from the repo secret DEMO_HOSTED_API_KEY.
+          FLYTE_API_KEY: ${{ secrets.DEMO_HOSTED_API_KEY }}
           GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
           TIERS: ${{ github.event_name == 'schedule' && '["static","trajectory","real"]' || '["static","trajectory"]' }}
         run: |
