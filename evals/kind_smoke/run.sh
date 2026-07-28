@@ -38,13 +38,93 @@ nodes:
 EOF
 
 echo "==> in-cluster minio + postgres (throwaway deps for the smoke test)"
+# Plain pinned manifests with official upstream images instead of the Bitnami
+# Helm charts: Bitnami deprecated its free image catalog (Aug 2025), so those
+# charts now pull rolling ':latest' tags from a shrinking registry, which is
+# slow/flaky on 2-CPU CI runners (minio was hitting 'context deadline
+# exceeded'). These are throwaway deps — the skill itself uses external hosted
+# Postgres + S3/R2 — so determinism matters more than fidelity here. The
+# Postgres Service keeps the name 'pg-postgresql' the flyte-binary step wires to.
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
-helm repo add bitnami https://charts.bitnami.com/bitnami >/dev/null
-helm repo update >/dev/null
-helm upgrade --install pg bitnami/postgresql -n "$NS" \
-  --set auth.postgresPassword=flyte --set auth.database=flyte --wait --timeout 5m
-helm upgrade --install minio bitnami/minio -n "$NS" \
-  --set auth.rootUser=minio --set auth.rootPassword=miniostorage --wait --timeout 5m
+kubectl apply -n "$NS" -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pg
+  labels: { app: pg }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: pg } }
+  template:
+    metadata:
+      labels: { app: pg }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - { name: POSTGRES_PASSWORD, value: flyte }
+            - { name: POSTGRES_DB, value: flyte }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports: [{ containerPort: 5432 }]
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "postgres"] }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+      volumes:
+        - { name: data, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pg-postgresql
+spec:
+  selector: { app: pg }
+  ports: [{ port: 5432, targetPort: 5432 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  labels: { app: minio }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: minio } }
+  template:
+    metadata:
+      labels: { app: minio }
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:RELEASE.2025-04-08T15-41-24Z
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - { name: MINIO_ROOT_USER, value: minio }
+            - { name: MINIO_ROOT_PASSWORD, value: miniostorage }
+          ports: [{ containerPort: 9000 }, { containerPort: 9001 }]
+          readinessProbe:
+            httpGet: { path: /minio/health/ready, port: 9000 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - { name: data, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+spec:
+  selector: { app: minio }
+  ports:
+    - { name: api, port: 9000, targetPort: 9000 }
+    - { name: console, port: 9001, targetPort: 9001 }
+EOF
+kubectl rollout status -n "$NS" deploy/pg --timeout=5m
+kubectl rollout status -n "$NS" deploy/minio --timeout=5m
 
 echo "==> install flyte-binary (per deploy-flyte-kind flyte-binary step)"
 helm repo add flyteorg https://flyteorg.github.io/flyte >/dev/null
