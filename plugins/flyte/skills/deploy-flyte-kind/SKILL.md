@@ -1103,5 +1103,3 @@ doctl compute droplet delete flyte-kind
 
 The hosted PostgreSQL and S3/R2 bucket are untouched — clean those up in their own
 consoles.
-
-<!-- ci-trigger: exercise flyte-evals + kind-smoke on PR #29 (revert before merge) -->

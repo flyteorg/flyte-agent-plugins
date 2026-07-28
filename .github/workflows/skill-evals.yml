@@ -37,8 +37,9 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             OUT=$(python -m evals.select --base "origin/${{ github.base_ref }}")
           else
-            # nightly / manual: run everything
-            OUT=$(python -m evals.select --changed evals/manifest.yaml)
+            # nightly (schedule) / manual (workflow_dispatch): full matrix —
+            # all skills (flyte-evals, incl. real tier) and the kind smoke.
+            OUT=$(python -m evals.select --all)
           fi
           echo "$OUT"
           python - "$OUT" <<'PY' >> "$GITHUB_OUTPUT"
