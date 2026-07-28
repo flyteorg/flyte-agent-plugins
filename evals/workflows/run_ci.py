@@ -27,11 +27,9 @@ import sys
 import yaml
 
 import flyte
+from flyte.models import ActionPhase
 
 from evals.workflows.eval_wf import main
-
-# The one phase that means "the run finished and everything passed".
-_SUCCEEDED = "ACTION_PHASE_SUCCEEDED"
 
 # Repo root (…/evals/workflows/run_ci.py -> parents[2]); the copy-bundle base.
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -83,12 +81,12 @@ def run(argv: list[str] | None = None) -> int:
 
     # Block until the run reaches a terminal phase, streaming status transitions.
     run.wait()
-    phase = run.phase
-    print(f"Run terminal phase: {phase}", flush=True)
+    phase = run.phase  # a flyte.models.ActionPhase (str-enum); .name e.g. "SUCCEEDED"
+    print(f"Run terminal phase: {getattr(phase, 'name', phase)}", flush=True)
 
-    if phase != _SUCCEEDED:
-        print(f"::error::Eval run {run.name} did not succeed ({phase}) — {run.url}",
-              flush=True)
+    if phase != ActionPhase.SUCCEEDED:
+        print(f"::error::Eval run {run.name} did not succeed "
+              f"({getattr(phase, 'name', phase)}) — {run.url}", flush=True)
         # The per-scenario failure breakdown is printed to the run's `main` action
         # logs (and the HTML scorecard is on its report tab); point the operator
         # there rather than trying to re-fetch outputs from a failed run.
