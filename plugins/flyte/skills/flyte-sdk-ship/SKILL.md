@@ -45,7 +45,7 @@ env = flyte.TaskEnvironment(
 ```python
 env = flyte.TaskEnvironment(
     name="ml-training",
-    image=flyte.Image.from_image(
+    image=flyte.Image.from_base(
         "ghcr.io/flyteorg/flyte:py3.12-v2",  # base image
     ).with_pip_packages(
         "torch", "transformers", "datasets",
@@ -259,7 +259,7 @@ import flyte
 # Reference an externally-built image
 env = flyte.TaskEnvironment(
     name="team-a-task",
-    image=flyte.Image.from_image("ghcr.io/team-a/base:v1.2.3"),
+    image=flyte.Image.from_base("ghcr.io/team-a/base:v1.2.3"),
 )
 
 @env.task
@@ -274,7 +274,7 @@ import flyte.io
 
 env = flyte.TaskEnvironment(
     name="team-b-task",
-    image=flyte.Image.from_image("ghcr.io/team-b/base:v2.0.0"),
+    image=flyte.Image.from_base("ghcr.io/team-b/base:v2.0.0"),
 )
 
 @env.task
@@ -302,7 +302,7 @@ env = flyte.TaskEnvironment(
 ```python
 env = flyte.TaskEnvironment(
     name="training",
-    image=flyte.Image.from_image("nvidia/cuda:12.1-py3").with_pip_packages(
+    image=flyte.Image.from_base("nvidia/cuda:12.1-py3").with_pip_packages(
         "torch", "torchvision", "transformers", "datasets",
         "accelerate", "peft",
     ),
@@ -314,7 +314,7 @@ env = flyte.TaskEnvironment(
 ```python
 env = flyte.TaskEnvironment(
     name="inference",
-    image=flyte.Image.from_image("python:3.12-slim").with_pip_packages(
+    image=flyte.Image.from_base("python:3.12-slim").with_pip_packages(
         "fastapi", "uvicorn", "torch", "transformers",
         "bitsandbytes", "vllm",
     ),

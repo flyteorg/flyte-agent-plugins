@@ -126,19 +126,19 @@ fetching a run's details, polling until it completes, and reading its inputs and
 
 ```bash
 # List runs
-flyte run list --project flytesnacks --domain development
+flyte get run --project flytesnacks --domain development
 
 # Get run info
-flyte run get <run_name> --project flytesnacks --domain development
+flyte get run <run_name> --project flytesnacks --domain development
 
 # Watch run progress
-flyte run watch <run_name> --project flytesnacks --domain development
+flyte get run <run_name> --project flytesnacks --domain development
 
 # Get run outputs
-flyte run outputs <run_name> --project flytesnacks --domain development
+flyte get io <run_name> --project flytesnacks --domain development
 
 # Download run artifacts
-flyte run download <run_name> --project flytesnacks --domain development --output-dir ./artifacts
+flyte get io <run_name> --outputs-only --project flytesnacks --domain development
 ```
 
 ### Using Python SDK
@@ -168,25 +168,25 @@ print(result.url)
 
 ```bash
 # Stream logs
-flyte logs <run_name> --project flytesnacks --domain development
+flyte get logs <run_name> --project flytesnacks --domain development
 
 # View logs for a specific attempt
-flyte logs <run_name> --attempt 0
+flyte get logs <run_name> --attempt 0
 
 # Filter system logs
-flyte logs <run_name> --no-system
+flyte get logs <run_name> --filter-system
 
 # Scope to project/domain
-flyte logs <run_name> --project flytesnacks --domain development
+flyte get logs <run_name> --project flytesnacks --domain development
 ```
 
 ### CLI log options
 
 | Flag | Description |
 |---|---|
-| `--attempt` | View specific attempt logs |
-| `--no-system` | Filter out system logs |
-| `--raw` | Raw output (no formatting) |
+| `--attempt` / `-a` | View specific attempt logs |
+| `--filter-system` | Filter out system logs |
+| `--pretty` | Auto-scrolling box (limited to `--lines`) |
 | `--project` / `--domain` | Scope logs |
 
 ### Using Python SDK
@@ -196,8 +196,8 @@ import flyte
 
 result = flyte.run(main, inputs={"data": ["a"]})
 
-# Stream logs
-flyte.logs(result)
+# Logs are retrieved via the CLI: `flyte get logs <run_name>`
+print(result.url)  # open the run in the UI to view logs
 ```
 
 ## Re-running Runs
@@ -259,7 +259,6 @@ result = flyte.run(
         project="flytesnacks",
         domain="development",
         raw_data_path="s3://my-bucket/{run_id}/",
-        caching=flyte.CachingOptions(enable=True),
         service_account="my-sa",
     ),
 )
@@ -285,7 +284,7 @@ async def my_task(data: str) -> str:
 
 ```bash
 # Abort a run
-flyte abort <run_name> --project flytesnacks --domain development
+flyte abort run <run_name> --project flytesnacks --domain development
 ```
 
 ### Python SDK
@@ -294,7 +293,7 @@ flyte abort <run_name> --project flytesnacks --domain development
 import flyte
 
 result = flyte.run(main, inputs={"data": ["a"]})
-flyte.abort(result)
+result.abort()
 ```
 
 ### Using Flyte MCP
