@@ -33,6 +33,7 @@ class ArmResult:
     judge: JudgeResult | None = None
     exit_code: int = 0
     error: str = ""
+    unavailable: bool = False   # harness CLI not installed -> skip (not a failure)
 
     @property
     def checks_passed(self) -> bool:
@@ -69,9 +70,56 @@ class ScenarioResult:
         return round(t.score - c.score, 4)
 
     @property
-    def passed(self) -> bool:
+    def skipped(self) -> bool:
+        """No usable harness ran this scenario (agent CLI not installed)."""
         t = self.arms.get("treatment")
-        return bool(t and t.passed)
+        return bool(t and t.unavailable)
+
+    @property
+    def errored(self) -> bool:
+        """The treatment harness ran but crashed — a broken eval, distinct from
+        a skill regression (and distinct from a merely-unavailable harness)."""
+        t = self.arms.get("treatment")
+        return bool(t and t.error and not t.unavailable)
+
+    @property
+    def status(self) -> str:
+        """One of: skipped | error | scored."""
+        if self.skipped:
+            return "skipped"
+        if self.errored:
+            return "error"
+        return "scored"
+
+    @property
+    def score(self) -> float | None:
+        """Treatment rating in [0,1] — the tracked signal — or None if not scored."""
+        if self.status != "scored":
+            return None
+        t = self.arms.get("treatment")
+        return t.score if t else None
+
+    @property
+    def checks_ok(self) -> bool:
+        """Whether the treatment arm's deterministic checks passed. These are the
+        reliable, non-LLM signal CI gates on."""
+        t = self.arms.get("treatment")
+        return bool(t and t.checks_passed)
+
+    @property
+    def is_regression(self) -> bool:
+        """The CI hard-gate: a scored *static* scenario whose deterministic
+        SKILL.md lint failed. Static lint is the only non-stochastic signal —
+        trajectory/real arms run an LLM agent, so their failures lower the tracked
+        `score`/rating instead of hard-failing CI (which would flake per PR)."""
+        return self.status == "scored" and self.tier == "static" and not self.checks_ok
+
+    @property
+    def passed(self) -> bool:
+        """Scored and the treatment arm fully passed (checks + judge). Retained
+        for the scorecard; gating uses is_regression / status instead."""
+        t = self.arms.get("treatment")
+        return self.status == "scored" and bool(t and t.passed)
 
     def to_dict(self) -> dict:
         return {
@@ -79,6 +127,11 @@ class ScenarioResult:
             "skill": self.skill,
             "tier": self.tier,
             "harness": self.harness,
+            "status": self.status,
+            "score": self.score,
+            "checks_ok": self.checks_ok,
+            "is_regression": self.is_regression,
+            "skipped": self.skipped,
             "passed": self.passed,
             "lift": self.lift,
             "arms": {
@@ -88,6 +141,7 @@ class ScenarioResult:
                     "checks_passed": r.checks_passed,
                     "exit_code": r.exit_code,
                     "error": r.error,
+                    "unavailable": r.unavailable,
                     "judge": None if r.judge is None else {
                         "score": r.judge.score,
                         "passed": r.judge.passed,
@@ -102,6 +156,18 @@ class ScenarioResult:
                 for arm, r in self.arms.items()
             },
         }
+
+
+def skipped_scenario(scenario: Scenario, harness: str) -> ScenarioResult:
+    """A ScenarioResult marked skipped because `harness` isn't installed. Built
+    without spawning work — the caller filters unavailable harnesses up front so
+    they still appear on the scorecard without burning a task per skip."""
+    res = ScenarioResult(scenario.id, scenario.skill, scenario.tier, harness=harness)
+    for arm in scenario.arms():
+        res.arms[arm] = ArmResult(
+            arm=arm, unavailable=True, error=f"{harness} CLI not available",
+        )
+    return res
 
 
 def evaluate_static(scenario: Scenario) -> ScenarioResult:
@@ -122,7 +188,11 @@ def evaluate_scenario(scenario: Scenario, harness: str, glm: GLMConfig) -> Scena
 
     for arm in scenario.arms():
         if not runner.is_available():
-            res.arms[arm] = ArmResult(arm=arm, error=f"{harness} CLI not available")
+            # Harness CLI isn't installed — record as unavailable so the scenario
+            # is SKIPPED (excluded from rating and gating), not counted as a fail.
+            res.arms[arm] = ArmResult(
+                arm=arm, unavailable=True, error=f"{harness} CLI not available",
+            )
             continue
         try:
             with make_sandbox(tier=scenario.tier, glm=glm) as sb:

@@ -48,15 +48,18 @@ def eval_unit(unit: dict) -> dict:
     else:
         result = evaluate_scenario(sc, unit["harness"], glm).to_dict()
 
-    # Log this unit's verdict so each failing scenario is visible in its own map
-    # action's logs (not just in the aggregate), with the reason inline.
-    if result["passed"]:
-        print(f"PASS {result['scenario_id']} [{result.get('harness') or '-'}] "
-              f"({result['skill']}/{result['tier']})", flush=True)
-    else:
-        from evals.report import reason
-        print(f"FAIL {result['scenario_id']} [{result.get('harness') or '-'}] "
-              f"({result['skill']}/{result['tier']}): {reason(result)}", flush=True)
+    # Log this unit's verdict so each scenario is visible in its own map action's
+    # logs (not just in the aggregate). SCORE shows the tracked rating; SKIP means
+    # the agent CLI isn't installed; REGRESSION is a deterministic-check failure.
+    from evals.report import reason
+    st = result.get("status", "scored")
+    tag = {"skipped": "SKIP", "error": "ERROR"}.get(
+        st, "REGRESSION" if result.get("is_regression") else "SCORE")
+    score = result.get("score")
+    score_s = "" if score is None else f" score={score:.2f}"
+    suffix = "" if st == "scored" and not result.get("is_regression") else f": {reason(result)}"
+    print(f"{tag} {result['scenario_id']} [{result.get('harness') or '-'}] "
+          f"({result['skill']}/{result['tier']}){score_s}{suffix}", flush=True)
     return result
 
 
@@ -65,13 +68,10 @@ def aggregate(results: list[dict]) -> dict:
     """Collect verdicts into a scorecard summary (also emits an HTML report)."""
     import flyte.report
 
-    from evals.report import to_html, to_markdown
+    from evals.report import rating, to_html, to_markdown
 
-    passed = sum(1 for r in results if r["passed"])
     summary = {
-        "total": len(results),
-        "passed": passed,
-        "failed": len(results) - passed,
+        **rating(results),  # total, scored, skipped, errored, regressions, rating, ...
         "markdown": to_markdown(results),
         "results": results,
     }
@@ -88,12 +88,26 @@ def main(skills: list[str] | None = None,
          harnesses: list[str] | None = None,
          tiers: list[str] | None = None) -> dict:
     """Top-level workflow: build the matrix, fan out, aggregate."""
+    from evals.harness.evaluate import skipped_scenario
+    from evals.harness.runners import get_runner
     from evals.harness.spec import load_scenarios
 
     tiers = tiers or ["static", "trajectory"]
     scenarios = load_scenarios()
+    by_id = {s.id: s for s in scenarios}
 
+    # main runs the same image as eval_unit, so harness availability here matches
+    # the workers. Filter unavailable harnesses up front: they become skipped
+    # results inline (still on the scorecard) instead of a task pod per skip.
+    def _available(h: str) -> bool:
+        try:
+            return get_runner(h).is_available()
+        except Exception:
+            return False
+
+    avail_cache: dict[str, bool] = {}
     units: list[dict] = []
+    skipped: list[dict] = []
     for sc in scenarios:
         if sc.tier not in tiers:
             continue
@@ -103,34 +117,49 @@ def main(skills: list[str] | None = None,
             units.append({"scenario_id": sc.id, "harness": None})
             continue
         for h in (harnesses or list(sc.harnesses)):
-            units.append({"scenario_id": sc.id, "harness": h})
+            ok = avail_cache.setdefault(h, _available(h))
+            (units if ok else skipped).append({"scenario_id": sc.id, "harness": h})
 
-    if not units:
-        return {"total": 0, "passed": 0, "failed": 0, "results": [], "markdown": "no units selected"}
+    if not units and not skipped:
+        return {"total": 0, "scored": 0, "skipped": 0, "errored": 0,
+                "regressions": 0, "rating": None, "results": [], "markdown": "no units selected"}
 
-    results = [r for r in flyte.map(eval_unit, units) if isinstance(r, dict)]
+    results = [r for r in flyte.map(eval_unit, units) if isinstance(r, dict)] if units else []
+    # Add skipped harnesses as synthetic results (no task spent) for visibility.
+    results += [skipped_scenario(by_id[u["scenario_id"]], u["harness"]).to_dict()
+                for u in skipped]
     summary = aggregate(results)
+
+    import os
 
     from evals.report import failure_report
 
-    # Emit the per-scenario breakdown (with reasons) to this action's logs, so
-    # `which scenarios failed` is visible right next to the run, not just in the
-    # HTML scorecard on the report tab.
+    # Emit the rating + per-scenario breakdown to this action's logs, so the
+    # tracked score and any regressions are visible right next to the run (not
+    # only in the HTML scorecard on the report tab).
     print(failure_report(summary["results"]), flush=True)
 
-    # Fail the run (terminal phase != SUCCEEDED) when any scenario fails, so CI —
-    # which gates on the run's terminal phase — reports eval failures rather than
-    # going green on a completed-but-failing run. aggregate() has already attached
-    # the HTML scorecard, so it survives on that action's report tab. Name the
-    # failing scenarios in the error itself so they show in the UI error banner.
-    failed = [r for r in summary["results"] if not r["passed"]]
-    if failed:
+    # Gate the run — and therefore CI, which keys on the terminal phase — on
+    # REGRESSIONS only: static SKILL.md lint failures, the one deterministic,
+    # non-stochastic signal. A skipped harness (agent CLI not installed), a
+    # trajectory arm's low score, or a soft LLM-judge verdict never fails the run;
+    # those are tracked as the rating over time. An optional FLYTE_EVALS_MIN_RATING
+    # adds a floor for stricter runs. aggregate() already attached the scorecard.
+    regressions = [r for r in summary["results"] if r.get("is_regression")]
+    if regressions:
         ids = ", ".join(
-            f"{r['scenario_id']}[{r.get('harness') or '-'}]"
-            for r in sorted(failed, key=lambda r: (r["skill"], r["scenario_id"]))
+            f"{r['scenario_id']}"
+            for r in sorted(regressions, key=lambda r: (r["skill"], r["scenario_id"]))
         )
         raise RuntimeError(
-            f"{len(failed)} of {len(summary['results'])} eval scenarios failed: {ids}"
+            f"{len(regressions)} static-lint regression(s): {ids}"
+        )
+
+    floor = os.environ.get("FLYTE_EVALS_MIN_RATING")
+    if floor and summary["rating"] is not None and summary["rating"] < float(floor):
+        raise RuntimeError(
+            f"eval rating {summary['rating']:.3f} is below the required "
+            f"minimum {float(floor):.3f}"
         )
     return summary
 
