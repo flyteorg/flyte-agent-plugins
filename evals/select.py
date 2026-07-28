@@ -47,9 +47,9 @@ def is_shared_infra(path: str, manifest: Manifest) -> bool:
     return any(fnmatch.fnmatch(path, g) for g in manifest.shared_infra_globs)
 
 
-def select(changed: list[str], manifest: Manifest, scenarios) -> dict:
+def select(changed: list[str], manifest: Manifest, scenarios, force_all: bool = False) -> dict:
     by_skill = scenarios_by_skill(scenarios)
-    run_all = any(is_shared_infra(p, manifest) for p in changed)
+    run_all = force_all or any(is_shared_infra(p, manifest) for p in changed)
 
     if run_all:
         chosen_skills = sorted(by_skill)
@@ -77,21 +77,26 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="evals.select")
     ap.add_argument("--base", help="git ref to diff against (e.g. origin/main)")
     ap.add_argument("--changed", nargs="*", help="explicit changed file list")
+    ap.add_argument("--all", action="store_true",
+                    help="run the full matrix (all skills, kind smoke, real tier) — "
+                         "used for nightly/manual runs, independent of any diff")
     args = ap.parse_args(argv)
 
     repo_root = pathlib.Path(__file__).resolve().parents[1]
     manifest = Manifest.load()
     scenarios = load_scenarios()
 
-    if args.changed is not None:
+    if args.all:
+        changed = []
+    elif args.changed is not None:
         changed = args.changed
     elif args.base:
         changed = changed_from_git(args.base, repo_root)
     else:
-        print("provide --base <ref> or --changed <files...>", file=sys.stderr)
+        print("provide --base <ref>, --changed <files...>, or --all", file=sys.stderr)
         return 2
 
-    print(json.dumps(select(changed, manifest, scenarios), indent=2))
+    print(json.dumps(select(changed, manifest, scenarios, force_all=args.all), indent=2))
     return 0
 
 
