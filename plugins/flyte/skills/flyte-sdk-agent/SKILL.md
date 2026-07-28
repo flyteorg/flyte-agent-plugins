@@ -19,7 +19,7 @@ Build durable, observable AI agents with Flyte 2.
 | Example code | https://github.com/unionai/unionai-examples |
 | Flyte MCP tools | Available via the `flyte-cluster` and `flyte-docs` MCP servers |
 
-**Ground unfamiliar APIs in real examples.** When unsure of a current Flyte 2 API, or for a pattern not shown below, and the `flyte-docs` search tools are available, search them first — by exact symbol (`TaskEnvironment`, `flyte.File`, `map_task`), since matching is literal substring, not semantic — then adapt a real example rather than inventing one, and cite the file or section you pulled it from. (Flyte 2 is not `flytekit`; priors are often wrong.)
+**Ground unfamiliar APIs in real examples.** When unsure of a current Flyte 2 API, or for a pattern not shown below, and the `flyte-docs` search tools are available, search them first — by exact symbol (`TaskEnvironment`, `flyte.io.File`, `map_task`), since matching is literal substring, not semantic — then adapt a real example rather than inventing one, and cite the file or section you pulled it from. (Flyte 2 is not `flytekit`; priors are often wrong.)
 
 ## Pure Python Agents (No Framework)
 
@@ -241,7 +241,7 @@ async def main(query: str) -> str:
 | Tool call | `@env.task` — each tool is a durable task |
 | Reasoning step | `@env.task` with LLM call |
 | Observation | Output of tool task → input to reasoning task |
-| Loop | `flyte.condition` for external gates, or dynamic workflows for internal loops |
+| Loop | `flyte.new_condition` for external gates, or dynamic workflows for internal loops |
 | Parallel execution | `flyte.map` for fan-out sub-tasks |
 | Traces | `flyte.trace` for lightweight LLM calls within a step |
 
@@ -503,6 +503,6 @@ async def build_mcp_server() -> MCPServer:
 
 1. **Don't put LLM calls in a loop without durability** — each LLM call should be a `@env.task` for caching and replay.
 2. **Don't use Union-only features** — avoid `ReusePolicy` and other Union-specific APIs.
-3. **Don't pass large prompts inline** — use `flyte.File` for large context windows.
+3. **Don't pass large prompts inline** — use `flyte.io.File` for large context windows.
 4. **Don't forget to set resources** — LLM agent tasks need CPU for the orchestration container.
 5. **Don't hardcode API keys** — use Flyte secrets for LLM API keys.

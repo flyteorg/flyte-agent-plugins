@@ -38,14 +38,15 @@ def test_preprocess():
 def test_train():
     """Test training with a small dataset."""
     import flyte
-    data = flyte.DataFrame(polars.DataFrame({"x": [1, 2, 3], "y": [4, 5, 6]}))
+    import flyte.io
+    data = flyte.io.DataFrame(polars.DataFrame({"x": [1, 2, 3], "y": [4, 5, 6]}))
     model = train(data)
     assert model is not None
 
 def test_evaluate():
     """Test evaluation metrics."""
     import flyte
-    model = flyte.File(path="/tmp/mock_model.pt")
+    model = flyte.io.File(path="/tmp/mock_model.pt")
     metrics = evaluate(model)
     assert "accuracy" in metrics
     assert 0 <= metrics["accuracy"] <= 1
@@ -99,6 +100,7 @@ async def test_async_task_mark():
 
 ```python
 import flyte
+import flyte.io
 
 env = flyte.TaskEnvironment(
     name="eval",
@@ -108,10 +110,10 @@ env = flyte.TaskEnvironment(
 )
 
 @env.task
-async def load_test_data() -> flyte.DataFrame:
+async def load_test_data() -> flyte.io.DataFrame:
     """Load ground truth test data."""
     ...
-    return flyte.DataFrame(df)
+    return flyte.io.DataFrame(df)
 
 @env.task
 async def load_model(model_uri: str) -> object:
@@ -119,14 +121,14 @@ async def load_model(model_uri: str) -> object:
     ...
 
 @env.task
-async def predict(model: object, data: flyte.DataFrame) -> flyte.DataFrame:
+async def predict(model: object, data: flyte.io.DataFrame) -> flyte.io.DataFrame:
     """Run model predictions on test data."""
     ...
 
 @env.task
 async def compute_metrics(
-    predictions: flyte.DataFrame,
-    ground_truth: flyte.DataFrame,
+    predictions: flyte.io.DataFrame,
+    ground_truth: flyte.io.DataFrame,
 ) -> dict:
     """Compute evaluation metrics."""
     from sklearn.metrics import (
@@ -146,14 +148,14 @@ async def compute_metrics(
     }
 
 @env.task
-async def generate_report(metrics: dict) -> flyte.File:
+async def generate_report(metrics: dict) -> flyte.io.File:
     """Generate an evaluation report."""
     import matplotlib.pyplot as plt
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
     # Confusion matrix, ROC curve, etc.
     path = "/tmp/eval_report.png"
     fig.savefig(path)
-    return flyte.File(path=path)
+    return flyte.io.File(path=path)
 
 @env.task
 async def evaluate_pipeline(
@@ -176,7 +178,7 @@ async def evaluate_pipeline(
 async def compare_models(
     model_a_uri: str,
     model_b_uri: str,
-    test_data: flyte.DataFrame,
+    test_data: flyte.io.DataFrame,
 ) -> dict:
     """Compare two models on the same test data."""
     model_a = await load_model(model_a_uri)
@@ -199,7 +201,7 @@ async def compare_models(
 
 ```python
 @env.task
-async def validate_data(df: flyte.DataFrame) -> dict:
+async def validate_data(df: flyte.io.DataFrame) -> dict:
     """Run data quality checks."""
     inner = df.to_polars()
     checks = {}
@@ -232,7 +234,7 @@ async def validate_data(df: flyte.DataFrame) -> dict:
 
 @env.task
 async def data_quality_gate(
-    data: flyte.DataFrame,
+    data: flyte.io.DataFrame,
     threshold: float = 0.9,
 ) -> bool:
     """Pass/fail gate based on data quality score."""
@@ -248,7 +250,7 @@ async def data_quality_gate(
 ```python
 @env.task
 async def validate_output(
-    model_path: flyte.File,
+    model_path: flyte.io.File,
     metrics: dict,
     min_accuracy: float = 0.8,
 ) -> dict:
@@ -275,13 +277,14 @@ async def validate_output(
 import json
 import datetime
 import flyte
+import flyte.io
 
 @env.task
 async def track_experiment(
     experiment_name: str,
     hyperparams: dict,
     metrics: dict,
-) -> flyte.File:
+) -> flyte.io.File:
     """Track experiment results as a JSON file."""
     record = {
         "experiment": experiment_name,
@@ -292,12 +295,12 @@ async def track_experiment(
     path = f"/tmp/experiments/{experiment_name}.json"
     with open(path, "w") as f:
         json.dump(record, f, indent=2)
-    return flyte.File(path=path)
+    return flyte.io.File(path=path)
 
 @env.task
 async def run_experiment(
     config: dict,
-    data: flyte.DataFrame,
+    data: flyte.io.DataFrame,
 ) -> dict:
     """Run a single experiment and track results."""
     model = await train(data, config)
@@ -312,7 +315,7 @@ async def run_experiment(
 @env.task
 async def hpo_search(
     param_grid: list[dict],
-    data: flyte.DataFrame,
+    data: flyte.io.DataFrame,
 ) -> dict:
     """Run hyperparameter search with experiment tracking."""
     results = await flyte.map(
@@ -421,7 +424,7 @@ tests/
 ## Anti-Patterns
 
 1. **Don't test against remote runs in unit tests** — use direct function invocation for unit tests. Reserve `flyte.run()` for integration tests.
-2. **Don't hardcode test data paths** — use `flyte.File(path="/tmp/test_data")` with temp directories.
+2. **Don't hardcode test data paths** — use `flyte.io.File(path="/tmp/test_data")` with temp directories.
 3. **Don't skip data quality gates** — always validate data before and after transformations.
 4. **Don't use Union-only features** — avoid `ReusePolicy` and other Union-specific APIs.
 5. **Don't test ML models with random data** — use representative test datasets that match production distribution.

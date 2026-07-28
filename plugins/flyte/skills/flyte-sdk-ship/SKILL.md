@@ -19,7 +19,7 @@ Generate images, Dockerfiles, and dependency configurations for Flyte 2 tasks.
 | Example code | https://github.com/unionai/unionai-examples |
 | Flyte MCP tools | Available via the `flyte-cluster` and `flyte-docs` MCP servers |
 
-**Ground unfamiliar APIs in real examples.** When unsure of a current Flyte 2 API, or for a pattern not shown below, and the `flyte-docs` search tools are available, search them first — by exact symbol (`TaskEnvironment`, `flyte.File`, `map_task`), since matching is literal substring, not semantic — then adapt a real example rather than inventing one, and cite the file or section you pulled it from. (Flyte 2 is not `flytekit`; priors are often wrong.)
+**Ground unfamiliar APIs in real examples.** When unsure of a current Flyte 2 API, or for a pattern not shown below, and the `flyte-docs` search tools are available, search them first — by exact symbol (`TaskEnvironment`, `flyte.io.File`, `map_task`), since matching is literal substring, not semantic — then adapt a real example rather than inventing one, and cite the file or section you pulled it from. (Flyte 2 is not `flytekit`; priors are often wrong.)
 
 ## flyte.Image — Programmatic Image Definition
 
@@ -270,6 +270,7 @@ async def process(data: str) -> str:
 ```python
 # team-b/pipeline.py
 import flyte
+import flyte.io
 
 env = flyte.TaskEnvironment(
     name="team-b-task",
@@ -277,7 +278,7 @@ env = flyte.TaskEnvironment(
 )
 
 @env.task
-async def train(model_path: flyte.File) -> dict:
+async def train(model_path: flyte.io.File) -> dict:
     ...
 ```
 
