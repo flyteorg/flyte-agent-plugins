@@ -18,6 +18,37 @@ def _cell(passed: bool) -> str:
     return "✅" if passed else "❌"
 
 
+def reason(result: dict) -> str:
+    """One-line, human-readable reason a scenario failed — the first failing
+    signal across its arms (a failed deterministic check, an arm error, or a
+    failed LLM judge). Used for log/error visibility."""
+    for arm, ar in result.get("arms", {}).items():
+        for ch in ar.get("checks", []):
+            if not ch["passed"]:
+                return f"[{arm}] check {ch['kind']}: {ch['detail']}"
+        if ar.get("error"):
+            return f"[{arm}] error: {ar['error']}"
+        judge = ar.get("judge")
+        if judge and not judge.get("passed", True):
+            rat = (judge.get("rationale") or "").strip().replace("\n", " ")
+            return f"[{arm}] judge {_fmt(judge.get('score'))}: {rat[:240]}"
+    return "no passing treatment arm"
+
+
+def failure_report(results: list[dict]) -> str:
+    """Plaintext per-scenario failure breakdown for task logs / CI output."""
+    failed = [r for r in results if not r["passed"]]
+    if not failed:
+        return f"all {len(results)} scenarios passed"
+    lines = [f"{len(failed)} of {len(results)} scenarios failed:"]
+    for r in sorted(failed, key=lambda r: (r["skill"], r["scenario_id"], r.get("harness") or "")):
+        lines.append(
+            f"  ✗ {r['scenario_id']} [{r.get('harness') or '-'}] "
+            f"({r['skill']}/{r['tier']}): {reason(r)}"
+        )
+    return "\n".join(lines)
+
+
 def to_markdown(results: list[dict]) -> str:
     total = len(results)
     failed = [r for r in results if not r["passed"]]

@@ -44,8 +44,20 @@ def eval_unit(unit: dict) -> dict:
     sc = scenarios[unit["scenario_id"]]
     glm = GLMConfig.from_env()
     if sc.tier == "static":
-        return evaluate_static(sc).to_dict()
-    return evaluate_scenario(sc, unit["harness"], glm).to_dict()
+        result = evaluate_static(sc).to_dict()
+    else:
+        result = evaluate_scenario(sc, unit["harness"], glm).to_dict()
+
+    # Log this unit's verdict so each failing scenario is visible in its own map
+    # action's logs (not just in the aggregate), with the reason inline.
+    if result["passed"]:
+        print(f"PASS {result['scenario_id']} [{result.get('harness') or '-'}] "
+              f"({result['skill']}/{result['tier']})", flush=True)
+    else:
+        from evals.report import reason
+        print(f"FAIL {result['scenario_id']} [{result.get('harness') or '-'}] "
+              f"({result['skill']}/{result['tier']}): {reason(result)}", flush=True)
+    return result
 
 
 @env.task(report=True)
@@ -98,13 +110,27 @@ def main(skills: list[str] | None = None,
 
     results = [r for r in flyte.map(eval_unit, units) if isinstance(r, dict)]
     summary = aggregate(results)
+
+    from evals.report import failure_report
+
+    # Emit the per-scenario breakdown (with reasons) to this action's logs, so
+    # `which scenarios failed` is visible right next to the run, not just in the
+    # HTML scorecard on the report tab.
+    print(failure_report(summary["results"]), flush=True)
+
     # Fail the run (terminal phase != SUCCEEDED) when any scenario fails, so CI —
     # which gates on the run's terminal phase — reports eval failures rather than
     # going green on a completed-but-failing run. aggregate() has already attached
-    # the HTML scorecard, so it survives on that action's report tab.
-    if summary.get("failed"):
+    # the HTML scorecard, so it survives on that action's report tab. Name the
+    # failing scenarios in the error itself so they show in the UI error banner.
+    failed = [r for r in summary["results"] if not r["passed"]]
+    if failed:
+        ids = ", ".join(
+            f"{r['scenario_id']}[{r.get('harness') or '-'}]"
+            for r in sorted(failed, key=lambda r: (r["skill"], r["scenario_id"]))
+        )
         raise RuntimeError(
-            f"{summary['failed']} of {summary['total']} eval scenarios failed"
+            f"{len(failed)} of {len(summary['results'])} eval scenarios failed: {ids}"
         )
     return summary
 

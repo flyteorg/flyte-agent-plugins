@@ -89,6 +89,11 @@ def run(argv: list[str] | None = None) -> int:
     if phase != _SUCCEEDED:
         print(f"::error::Eval run {run.name} did not succeed ({phase}) — {run.url}",
               flush=True)
+        # The per-scenario failure breakdown is printed to the run's `main` action
+        # logs (and the HTML scorecard is on its report tab); point the operator
+        # there rather than trying to re-fetch outputs from a failed run.
+        print(f"See the per-scenario breakdown in the run logs / report tab: {run.url}",
+              flush=True)
         return 1
     print(f"Eval run {run.name} succeeded.", flush=True)
     return 0
