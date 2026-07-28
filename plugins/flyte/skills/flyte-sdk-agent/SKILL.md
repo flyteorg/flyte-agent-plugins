@@ -438,8 +438,8 @@ flyte run agent.py run_agent --query "Research X"
 
 ```bash
 # Create a trigger for periodic agent execution
-flyte trigger create agent_task \
-  --cron "0 9 * * 1"  # every Monday at 9am
+flyte create trigger agent_task daily-agent \
+  --schedule "0 9 * * 1"  # every Monday at 9am
 ```
 
 ### Behind a webhook

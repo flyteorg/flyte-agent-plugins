@@ -153,7 +153,7 @@ import flyte
 from flyte.app.extras import StreamlitAppEnvironment
 
 # Access upstream app endpoint
-MODEL_ENDPOINT = flyte.AppEndpoint("model-serving")
+MODEL_ENDPOINT = flyte.app.AppEndpoint(app_name="model-serving")
 
 st.title("Model Results")
 
@@ -183,7 +183,7 @@ from flyte.app.extras import vLLMAppEnvironment
 env = vLLMAppEnvironment(
     name="llm-serving",
     model="meta-llama/Llama-3-8b-Instruct",
-    image=flyte.Image.from_image("vllm/vllm-openai:latest"),
+    image=flyte.Image.from_base("vllm/vllm-openai:latest"),
     resources=flyte.Resources(
         cpu="8",
         memory="32Gi",
@@ -204,7 +204,7 @@ env = vLLMAppEnvironment(
     name="llm-serving",
     model="meta-llama/Llama-3-8b-Instruct",
     prefetch=True,  # prefetch model weights at deploy time
-    image=flyte.Image.from_image("vllm/vllm-openai:latest"),
+    image=flyte.Image.from_base("vllm/vllm-openai:latest"),
     resources=flyte.Resources(
         cpu="8",
         memory="32Gi",
@@ -222,7 +222,7 @@ env = vLLMAppEnvironment(
     model="meta-llama/Llama-3-70b-Instruct",
     tensor_parallel_size=4,  # shard across 4 GPUs
     prefetch=True,
-    image=flyte.Image.from_image("vllm/vllm-openai:latest"),
+    image=flyte.Image.from_base("vllm/vllm-openai:latest"),
     resources=flyte.Resources(
         cpu="16",
         memory="128Gi",
@@ -244,7 +244,7 @@ env = SGLangEnvironment(
     name="structured-gen",
     model="meta-llama/Llama-3-8b-Instruct",
     prefetch=True,
-    image=flyte.Image.from_image("sgl-project/sglang:latest"),
+    image=flyte.Image.from_base("sgl-project/sglang:latest"),
     resources=flyte.Resources(
         cpu="4",
         memory="16Gi",
@@ -323,13 +323,13 @@ print(f"App URL: {result.url}")
 
 ```bash
 # Activate a deployed app
-flyte activate <app_name> --project flytesnacks --domain development
+flyte update app <app_name> --activate --project flytesnacks --domain development
 
 # Deactivate
-flyte deactivate <app_name> --project flytesnacks --domain development
+flyte update app <app_name> --deactivate --project flytesnacks --domain development
 
 # Check status
-flyte app get <app_name> --project flytesnacks --domain development
+flyte get app <app_name> --project flytesnacks --domain development
 ```
 
 ### Using Flyte MCP for app management
@@ -347,8 +347,8 @@ env = FastAPIAppEnvironment(
     name="model-serving",
     app=app,
     parameters={
-        "model_name": flyte.Parameter.mount("/models/model.safetensors"),
-        "api_key": flyte.Parameter.env_var("API_KEY"),
+        "model_name": flyte.app.Parameter(name="model_name", mount="/models/model.safetensors"),
+        "api_key": flyte.app.Parameter(name="api_key", env_var="API_KEY"),
     },
 )
 ```
@@ -364,15 +364,14 @@ flyte serve app.py env --parameter model_name=/custom/path
 ### Auto-scaling apps
 
 ```python
+from datetime import timedelta
+
 env = FastAPIAppEnvironment(
     name="auto-scaling-app",
     app=app,
-    scaling=flyte.ScalingConfig(
-        min_replicas=1,
-        max_replicas=10,
-        target_cpu_utilization=70,
-        idle_ttl="5m",
-        scale_down_delay="10m",
+    scaling=flyte.app.Scaling(
+        replicas=(1, 10),  # autoscale between (min, max) replicas
+        scaledown_after=timedelta(minutes=10),
     ),
 )
 ```
@@ -410,7 +409,7 @@ model_url = model_env.endpoint.url
 gpu_env = FastAPIAppEnvironment(
     name="model-gpu",
     app=gpu_app,
-    image=flyte.Image.from_image("nvidia/cuda:12.1-py3").with_pip_packages(
+    image=flyte.Image.from_base("nvidia/cuda:12.1-py3").with_pip_packages(
         "torch", "fastapi", "uvicorn",
     ),
     resources=flyte.Resources(
@@ -466,7 +465,7 @@ if __name__ == "__main__":
 
 ```python
 # Create a secret (via CLI or SDK)
-# flyte secret create my-api-key --value "sk-xxx"
+# flyte create secret my-api-key --value "sk-xxx"
 
 env = FastAPIAppEnvironment(
     name="authenticated-app",
@@ -485,6 +484,6 @@ api_key = os.environ["FLYTE_SECRET_MY_API_KEY"]
 
 1. **Don't use `flyte.run()` inside apps** — use `flyte.serve()` for apps, `flyte.run()` for workflows.
 2. **Don't forget `flyte.init_from_config()`** — required before `flyte.serve()`.
-3. **Don't hardcode model paths** — use `flyte.AppEndpoint` for upstream app URLs.
+3. **Don't hardcode model paths** — use `flyte.app.AppEndpoint` for upstream app URLs.
 4. **Don't use Union-only features** — avoid `ReusePolicy` and other Union-specific APIs.
 5. **Don't serve GPU apps without GPU resources** — always specify `gpu` and `gpu_model` in resources.

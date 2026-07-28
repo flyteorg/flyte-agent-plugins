@@ -212,7 +212,7 @@ Extend Flyte's type system to support custom types (e.g., PIL Images, HuggingFac
 from PIL import Image
 import flyte
 import flyte.io
-from flyte.extend import TypeTransformer, DefaultMappingTypeTransformer
+from flyte.types import TypeTransformer
 
 class PILImageTransformer(TypeTransformer[Image.Image]):
     _type = Image.Image
@@ -227,7 +227,7 @@ class PILImageTransformer(TypeTransformer[Image.Image]):
         return Image.open(path)
 
 # Register the transformer
-flyte.TypeEngine.register(PILImageTransformer())
+flyte.types.TypeEngine.register(PILImageTransformer())
 
 # Now use it in tasks
 @env.task
@@ -254,7 +254,7 @@ class HFDatasetTransformer(TypeTransformer[Dataset]):
     def load(self, path: str) -> Dataset:
         return Dataset.load_from_disk(path)
 
-flyte.TypeEngine.register(HFDatasetTransformer())
+flyte.types.TypeEngine.register(HFDatasetTransformer())
 ```
 
 ## Data I/O Patterns by Domain

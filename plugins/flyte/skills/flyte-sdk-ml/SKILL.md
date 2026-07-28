@@ -31,7 +31,7 @@ import flyte.io
 
 env = flyte.TaskEnvironment(
     name="training",
-    image=flyte.Image.from_image("pytorch/pytorch:2.1-cuda12.1-cudnn8-devel").with_pip_packages(
+    image=flyte.Image.from_base("pytorch/pytorch:2.1-cuda12.1-cudnn8-devel").with_pip_packages(
         "transformers", "datasets", "accelerate",
     ),
 )
@@ -136,7 +136,7 @@ import flyte.io
 
 env = flyte.TaskEnvironment(
     name="hf-training",
-    image=flyte.Image.from_image("pytorch/pytorch:2.1-cuda12.1-cudnn8-devel").with_pip_packages(
+    image=flyte.Image.from_base("pytorch/pytorch:2.1-cuda12.1-cudnn8-devel").with_pip_packages(
         "transformers", "datasets", "accelerate", "evaluate",
     ),
 )
@@ -206,7 +206,7 @@ import flyte
 
 env = flyte.TaskEnvironment(
     name="hpo",
-    image=flyte.Image.from_image("pytorch/pytorch:2.1-cuda12.1-cudnn8-devel").with_pip_packages(
+    image=flyte.Image.from_base("pytorch/pytorch:2.1-cuda12.1-cudnn8-devel").with_pip_packages(
         "transformers", "datasets",
     ),
 )
@@ -560,7 +560,7 @@ async def predict(text: str) -> dict:
 env = FastAPIAppEnvironment(
     name="model-serving",
     app=app,
-    image=flyte.Image.from_image("pytorch/pytorch:2.1-cuda12.1-cudnn8-devel").with_pip_packages(
+    image=flyte.Image.from_base("pytorch/pytorch:2.1-cuda12.1-cudnn8-devel").with_pip_packages(
         "fastapi", "uvicorn", "torch", "transformers",
     ),
     resources=flyte.Resources(cpu="4", memory="16Gi", gpu="1", gpu_model="nvidia-a10g"),

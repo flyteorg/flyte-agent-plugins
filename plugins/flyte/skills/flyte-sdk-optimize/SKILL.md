@@ -264,7 +264,7 @@ async def flaky_task(data: str) -> str:
     """Task that may fail transiently."""
     ...
 
-@env.task(retries=3, retry_policy=flyte.RetryPolicy(min_attempts=3))
+@env.task(retries=flyte.RetryStrategy(count=3))
 async def critical_task(data: str) -> str:
     """Always retry, never fail fast."""
     ...
