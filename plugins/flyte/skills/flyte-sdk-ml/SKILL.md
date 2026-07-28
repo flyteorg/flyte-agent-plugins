@@ -19,7 +19,7 @@ Build ML training, HPO, evaluation, and inference pipelines with Flyte 2.
 | Example code | https://github.com/unionai/unionai-examples |
 | Flyte MCP tools | Available via the `flyte-cluster` and `flyte-docs` MCP servers |
 
-**Ground unfamiliar APIs in real examples.** When unsure of a current Flyte 2 API, or for a pattern not shown below, and the `flyte-docs` search tools are available, search them first — by exact symbol (`TaskEnvironment`, `flyte.File`, `map_task`), since matching is literal substring, not semantic — then adapt a real example rather than inventing one, and cite the file or section you pulled it from. (Flyte 2 is not `flytekit`; priors are often wrong.)
+**Ground unfamiliar APIs in real examples.** When unsure of a current Flyte 2 API, or for a pattern not shown below, and the `flyte-docs` search tools are available, search them first — by exact symbol (`TaskEnvironment`, `flyte.io.File`, `map_task`), since matching is literal substring, not semantic — then adapt a real example rather than inventing one, and cite the file or section you pulled it from. (Flyte 2 is not `flytekit`; priors are often wrong.)
 
 ## Model Training
 
@@ -27,6 +27,7 @@ Build ML training, HPO, evaluation, and inference pipelines with Flyte 2.
 
 ```python
 import flyte
+import flyte.io
 
 env = flyte.TaskEnvironment(
     name="training",
@@ -41,10 +42,10 @@ env = flyte.TaskEnvironment(
     ),
 )
 async def train(
-    train_data: flyte.File,
-    val_data: flyte.File,
+    train_data: flyte.io.File,
+    val_data: flyte.io.File,
     hyperparams: dict,
-) -> flyte.File:
+) -> flyte.io.File:
     """Train a model and save checkpoint."""
     import torch
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -64,7 +65,7 @@ async def train(
     output_path = "/tmp/model_checkpoint"
     model.save_pretrained(output_path)
     tokenizer.save_pretrained(output_path)
-    return flyte.File(path=output_path)
+    return flyte.io.File(path=output_path)
 
 @env.task
 async def main(
@@ -76,8 +77,8 @@ async def main(
 ) -> dict:
     hyperparams = {"lr": lr, "batch_size": batch_size, "epochs": epochs}
     checkpoint = await train(
-        train_data=flyte.File(path=train_uri),
-        val_data=flyte.File(path=val_uri),
+        train_data=flyte.io.File(path=train_uri),
+        val_data=flyte.io.File(path=val_uri),
         hyperparams=hyperparams,
     )
     return {"checkpoint": checkpoint, "hyperparams": hyperparams}
@@ -87,6 +88,7 @@ async def main(
 
 ```python
 import flyte
+import flyte.io
 
 env = flyte.TaskEnvironment(
     name="sklearn-training",
@@ -97,10 +99,10 @@ env = flyte.TaskEnvironment(
 
 @env.task
 async def train_sklearn(
-    train_data: flyte.DataFrame,
-    val_data: flyte.DataFrame,
+    train_data: flyte.io.DataFrame,
+    val_data: flyte.io.DataFrame,
     model_type: str = "random_forest",
-) -> flyte.File:
+) -> flyte.io.File:
     """Train a scikit-learn model."""
     from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
     from sklearn.linear_model import LogisticRegression
@@ -123,13 +125,14 @@ async def train_sklearn(
 
     path = f"/tmp/{model_type}_model.joblib"
     joblib.dump(model, path)
-    return flyte.File(path=path)
+    return flyte.io.File(path=path)
 ```
 
 ### HuggingFace Trainer
 
 ```python
 import flyte
+import flyte.io
 
 env = flyte.TaskEnvironment(
     name="hf-training",
@@ -147,7 +150,7 @@ async def train_hf(
     dataset_name: str,
     model_name: str,
     hyperparams: dict,
-) -> flyte.File:
+) -> flyte.io.File:
     """Train with HuggingFace Trainer."""
     from datasets import load_dataset
     from transformers import (
@@ -191,7 +194,7 @@ async def train_hf(
     trainer.save_model("/tmp/final_model")
     tokenizer.save_pretrained("/tmp/final_model")
 
-    return flyte.File(path="/tmp/final_model")
+    return flyte.io.File(path="/tmp/final_model")
 ```
 
 ## Hyperparameter Optimization
@@ -280,14 +283,15 @@ async def grid_search() -> dict:
 import json
 import datetime
 import flyte
+import flyte.io
 
 @env.task
 async def track_experiment(
     experiment_name: str,
     hyperparams: dict,
     metrics: dict,
-    checkpoint: flyte.File,
-) -> flyte.File:
+    checkpoint: flyte.io.File,
+) -> flyte.io.File:
     """Track experiment results as a JSON file in remote storage."""
     record = {
         "experiment": experiment_name,
@@ -299,7 +303,7 @@ async def track_experiment(
     path = f"/tmp/experiments/{experiment_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(path, "w") as f:
         json.dump(record, f, indent=2)
-    return flyte.File(path=path)
+    return flyte.io.File(path=path)
 
 @env.task
 async def compare_experiments(
@@ -322,9 +326,9 @@ async def compare_experiments(
 @env.task
 async def track_inference(
     model_uri: str,
-    test_data: flyte.File,
+    test_data: flyte.io.File,
     metrics: dict,
-) -> flyte.File:
+) -> flyte.io.File:
     """Track inference results."""
     record = {
         "model_uri": model_uri,
@@ -335,7 +339,7 @@ async def track_inference(
     path = f"/tmp/inference/{model_uri.split('/')[-1]}_{datetime.datetime.now().strftime('%Y%m%d')}.json"
     with open(path, "w") as f:
         json.dump(record, f, indent=2)
-    return flyte.File(path=path)
+    return flyte.io.File(path=path)
 ```
 
 ## Model Evaluation and Selection
@@ -344,6 +348,7 @@ async def track_inference(
 
 ```python
 import flyte
+import flyte.io
 
 env = flyte.TaskEnvironment(
     name="evaluation",
@@ -354,8 +359,8 @@ env = flyte.TaskEnvironment(
 
 @env.task
 async def evaluate_model(
-    model_path: flyte.File,
-    test_data: flyte.DataFrame,
+    model_path: flyte.io.File,
+    test_data: flyte.io.DataFrame,
 ) -> dict:
     """Evaluate a model and return metrics."""
     import joblib
@@ -383,8 +388,8 @@ async def evaluate_model(
 
 @env.task
 async def select_best_model(
-    candidate_models: list[flyte.File],
-    test_data: flyte.DataFrame,
+    candidate_models: list[flyte.io.File],
+    test_data: flyte.io.DataFrame,
 ) -> dict:
     """Evaluate all candidates and select the best."""
     evaluations = await flyte.map(
@@ -402,7 +407,7 @@ async def select_best_model(
 async def generate_comparison_report(
     evaluations: list[dict],
     model_names: list[str],
-) -> flyte.File:
+) -> flyte.io.File:
     """Generate a model comparison report."""
     import matplotlib.pyplot as plt
     import pandas as pd
@@ -425,7 +430,7 @@ async def generate_comparison_report(
 
     path = "/tmp/model_comparison.png"
     fig.savefig(path, bbox_inches="tight")
-    return flyte.File(path=path)
+    return flyte.io.File(path=path)
 ```
 
 ## Batch Inference
@@ -434,6 +439,7 @@ async def generate_comparison_report(
 
 ```python
 import flyte
+import flyte.io
 
 env = flyte.TaskEnvironment(
     name="batch-inference",
@@ -462,9 +468,9 @@ async def load_model(model_uri: str) -> object:
 )
 async def batch_predict(
     model_ctx: object,
-    data_file: flyte.File,
+    data_file: flyte.io.File,
     batch_size: int = 32,
-) -> flyte.File:
+) -> flyte.io.File:
     """Run inference on a batch of data."""
     import torch
     import polars as pl
@@ -490,7 +496,7 @@ async def batch_predict(
     results = pl.DataFrame({"prediction": all_preds, "probability": all_probs})
     path = f"/tmp/predictions_{data_file.path.split('/')[-1]}"
     results.write_parquet(path)
-    return flyte.File(path=path)
+    return flyte.io.File(path=path)
 
 @env.task
 async def batch_inference(
@@ -501,7 +507,7 @@ async def batch_inference(
     model_ctx = await load_model(model_uri)
     # Fan out inference across files
     results = await flyte.map(
-        lambda f: batch_predict(model_ctx, flyte.File(path=f)),
+        lambda f: batch_predict(model_ctx, flyte.io.File(path=f)),
         data_files,
     )
     return results
@@ -568,8 +574,8 @@ env = FastAPIAppEnvironment(
 ```python
 @env.task(cache="auto")
 async def detect_drift(
-    baseline_data: flyte.DataFrame,
-    current_data: flyte.DataFrame,
+    baseline_data: flyte.io.DataFrame,
+    current_data: flyte.io.DataFrame,
 ) -> dict:
     """Detect data drift between baseline and current distributions."""
     import scipy.stats as stats
@@ -596,9 +602,9 @@ async def detect_drift(
 @env.task
 async def monitor_model(
     model_uri: str,
-    baseline_data: flyte.DataFrame,
-    current_data: flyte.DataFrame,
-    predictions: flyte.DataFrame,
+    baseline_data: flyte.io.DataFrame,
+    current_data: flyte.io.DataFrame,
+    predictions: flyte.io.DataFrame,
 ) -> dict:
     """Monitor model health: drift, performance, prediction distribution."""
     drift = await detect_drift(baseline_data, current_data)
@@ -627,8 +633,8 @@ async def monitor_model(
 ```python
 @env.task
 async def monitor_prediction_quality(
-    predictions: flyte.DataFrame,
-    ground_truth: flyte.DataFrame,
+    predictions: flyte.io.DataFrame,
+    ground_truth: flyte.io.DataFrame,
 ) -> dict:
     """Monitor prediction quality over time."""
     merged = predictions.to_polars().join(ground_truth.to_polars(), on="id")

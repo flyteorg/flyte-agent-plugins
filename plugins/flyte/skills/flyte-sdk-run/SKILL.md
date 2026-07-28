@@ -335,18 +335,19 @@ async def long_task(data: str) -> str:
 
 ```python
 import flyte
+import flyte.io
 
 @env.task
-async def get_run_data(run_name: str) -> flyte.File:
+async def get_run_data(run_name: str) -> flyte.io.File:
     """Download artifacts from a past run."""
     # Flyte stores outputs in the metadata bucket
     # Access via the SDK's data retrieval methods
     ...
 
 @env.task
-async def upload_local_data(file_path: str) -> flyte.File:
+async def upload_local_data(file_path: str) -> flyte.io.File:
     """Upload local file to remote storage for a run."""
-    return flyte.File(path=file_path)
+    return flyte.io.File(path=file_path)
 ```
 
 ### S3 / GCS / Azure access

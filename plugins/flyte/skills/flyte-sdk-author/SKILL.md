@@ -19,7 +19,7 @@ Create Flyte 2 workflows, tasks, and apps from scratch using pure Python — no 
 | Example code | https://github.com/unionai/unionai-examples |
 | Flyte MCP tools | Available via the `flyte-cluster` and `flyte-docs` MCP servers |
 
-**Ground unfamiliar APIs in real examples.** When unsure of a current Flyte 2 API, or for a pattern not shown below, and the `flyte-docs` search tools are available, search them first — by exact symbol (`TaskEnvironment`, `flyte.File`, `map_task`), since matching is literal substring, not semantic — then adapt a real example rather than inventing one, and cite the file or section you pulled it from. (Flyte 2 is not `flytekit`; priors are often wrong.)
+**Ground unfamiliar APIs in real examples.** When unsure of a current Flyte 2 API, or for a pattern not shown below, and the `flyte-docs` search tools are available, search them first — by exact symbol (`TaskEnvironment`, `flyte.io.File`, `map_task`), since matching is literal substring, not semantic — then adapt a real example rather than inventing one, and cite the file or section you pulled it from. (Flyte 2 is not `flytekit`; priors are often wrong.)
 
 ## Tool Priority
 
@@ -35,6 +35,7 @@ Create Flyte 2 workflows, tasks, and apps from scratch using pure Python — no 
 
 ```python
 import flyte
+import flyte.io
 
 env = flyte.TaskEnvironment(
     name="training",
@@ -44,19 +45,19 @@ env = flyte.TaskEnvironment(
 )
 
 @env.task(retries=2, cache="auto")
-async def preprocess(data: list[str]) -> flyte.File:
+async def preprocess(data: list[str]) -> flyte.io.File:
     # ETL: clean + write to remote storage
     ...
-    return flyte.File(path="/tmp/output.parquet")
+    return flyte.io.File(path="/tmp/output.parquet")
 
 @env.task
-async def train(data_path: flyte.File) -> flyte.File:
+async def train(data_path: flyte.io.File) -> flyte.io.File:
     # ML: model training
     ...
-    return flyte.File(path="/tmp/model.pt")
+    return flyte.io.File(path="/tmp/model.pt")
 
 @env.task
-async def evaluate(model_path: flyte.File) -> dict:
+async def evaluate(model_path: flyte.io.File) -> dict:
     # ML: evaluation
     return {"accuracy": 0.95, "f1": 0.92}
 
@@ -76,8 +77,8 @@ if __name__ == "__main__":
 
 ```python
 @env.task
-async def process_image(url: str) -> flyte.File:
-    return flyte.File(path=f"/tmp/{url.split('/')[-1]}.png")
+async def process_image(url: str) -> flyte.io.File:
+    return flyte.io.File(path=f"/tmp/{url.split('/')[-1]}.png")
 
 @env.task
 async def main(urls: list[str]) -> list:
@@ -122,14 +123,22 @@ async def main(texts: list[str]) -> list:
 ### Conditions (external gates)
 
 ```python
+from datetime import timedelta
+
 @env.task
 async def main() -> None:
-    result = await flyte.condition(
+    # new_condition pauses the run until an external signal resolves it.
+    # data_type=bool -> wait() returns True/False (use int/float/str for other payloads).
+    approval = await flyte.new_condition(
         "human-approval",
+        prompt="Approve deployment before proceeding?",
+        prompt_type="markdown",
+        data_type=bool,
         description="Wait for human approval before proceeding",
-        timeout="24h",
+        timeout=timedelta(hours=24),
     )
-    if result.approved:
+    approved = await approval.wait()
+    if approved:
         await deploy_pipeline()
     else:
         await notify_rejected()
@@ -235,17 +244,17 @@ When scaffolding a new Flyte project:
 
 ```python
 @env.task(retries=3, cache="auto")
-async def extract(source: str) -> flyte.DataFrame:
+async def extract(source: str) -> flyte.io.DataFrame:
     """Extract data from a source (CSV, Parquet, database)."""
     ...
 
 @env.task(retries=2, cache="auto")
-async def transform(df: flyte.DataFrame) -> flyte.DataFrame:
+async def transform(df: flyte.io.DataFrame) -> flyte.io.DataFrame:
     """Clean, normalize, join data."""
     return df.dropna()
 
 @env.task(cache="auto")
-async def load(df: flyte.DataFrame, destination: str) -> None:
+async def load(df: flyte.io.DataFrame, destination: str) -> None:
     """Write to Parquet, database, or data lake."""
     ...
 ```
@@ -255,18 +264,18 @@ async def load(df: flyte.DataFrame, destination: str) -> None:
 ```python
 @env.task
 async def train(
-    train_data: flyte.DataFrame,
-    val_data: flyte.DataFrame,
+    train_data: flyte.io.DataFrame,
+    val_data: flyte.io.DataFrame,
     hyperparams: dict,
-) -> flyte.File:
+) -> flyte.io.File:
     """Train a model and save checkpoint."""
     ...
-    return flyte.File(path="/tmp/checkpoint.pt")
+    return flyte.io.File(path="/tmp/checkpoint.pt")
 
 @env.task
 async def evaluate(
-    model_path: flyte.File,
-    test_data: flyte.DataFrame,
+    model_path: flyte.io.File,
+    test_data: flyte.io.DataFrame,
 ) -> dict:
     """Evaluate model and return metrics."""
     return {"accuracy": 0.95, "f1": 0.92, "auc": 0.97}
@@ -295,18 +304,18 @@ async def hpo(trial_configs: list[dict]) -> dict:
 
 ```python
 @env.task
-async def load_model(model_path: flyte.File):
+async def load_model(model_path: flyte.io.File):
     """Load model into memory (called once per container)."""
     ...
 
 @env.task
-async def predict(model: object, batch: flyte.DataFrame) -> flyte.DataFrame:
+async def predict(model: object, batch: flyte.io.DataFrame) -> flyte.io.DataFrame:
     """Run inference on a batch of data."""
     ...
 
 @env.task
 async def batch_inference(
-    model_path: flyte.File,
+    model_path: flyte.io.File,
     data_files: list[str],
 ) -> list:
     """Process data files in parallel batches."""
@@ -320,7 +329,7 @@ async def batch_inference(
 
 ```python
 @env.task(cache="auto")
-async def validate(df: flyte.DataFrame) -> dict:
+async def validate(df: flyte.io.DataFrame) -> dict:
     """Run data quality checks."""
     checks = {
         "null_counts": df.isna().sum().to_dict(),
@@ -397,8 +406,8 @@ as MCP tools taking the run name.
 ## Anti-Patterns to Avoid
 
 1. **Don't use Flyte 1.x syntax** — no `@task`, no `@workflow`, no `PythonFunctionTask`. Flyte 2 uses `@env.task` and `async` functions.
-2. **Don't hardcode paths** — use `flyte.File` for data that flows between tasks. Files are uploaded to the metadata bucket automatically.
-3. **Don't skip type hints** — Flyte 2 requires them for serialization. Use `flyte.DataFrame` for Polars, `flyte.File` for files, `flyte.Directory` for directories.
+2. **Don't hardcode paths** — use `flyte.io.File` for data that flows between tasks. Files are uploaded to the metadata bucket automatically.
+3. **Don't skip type hints** — Flyte 2 requires them for serialization. Use `flyte.io.DataFrame` for Polars, `flyte.io.File` for files, `flyte.io.Dir` for directories.
 4. **Don't use Union-only features** — avoid `ReusePolicy` and other Union-specific APIs. Write code that works on open-source Flyte v2.
 5. **Don't use `asyncio.gather` for heavy workloads** — use `flyte.map` for parallel container execution. `asyncio.gather` is for light fan-out within a single task.
 6. **Don't forget `flyte.init_from_config()`** — required before `flyte.serve()` for apps.

@@ -36,7 +36,7 @@ Performance optimization in Flyte follows a hierarchy:
 
 ```python
 @env.task(cache="auto")  # versioned by function body + inputs
-async def preprocess(data: list[str]) -> flyte.File:
+async def preprocess(data: list[str]) -> flyte.io.File:
     ...
 ```
 
@@ -44,15 +44,15 @@ async def preprocess(data: list[str]) -> flyte.File:
 
 ```python
 @env.task(cache="auto")  # default: function body + inputs
-async def task_a(data: str) -> flyte.File:
+async def task_a(data: str) -> flyte.io.File:
     ...
 
 @env.task(cache="override", salt="v2")  # add salt for cache key variation
-async def task_b(data: str) -> flyte.File:
+async def task_b(data: str) -> flyte.io.File:
     ...
 
 @env.task(cache="disable")  # always re-run
-async def task_c(data: str) -> flyte.File:
+async def task_c(data: str) -> flyte.io.File:
     ...
 ```
 
@@ -60,7 +60,7 @@ async def task_c(data: str) -> flyte.File:
 
 ```python
 @env.task(cache="auto")
-async def transform(df: flyte.DataFrame) -> flyte.DataFrame:
+async def transform(df: flyte.io.DataFrame) -> flyte.io.DataFrame:
     """Cache key includes DataFrame content hash."""
     ...
 ```
@@ -69,7 +69,7 @@ async def transform(df: flyte.DataFrame) -> flyte.DataFrame:
 
 ```python
 @env.task(cache="auto", cache_ignore_inputs=["api_key"])
-async def fetch_data(api_key: str, url: str) -> flyte.File:
+async def fetch_data(api_key: str, url: str) -> flyte.io.File:
     """Don't include api_key in cache key."""
     ...
 ```
@@ -78,7 +78,7 @@ async def fetch_data(api_key: str, url: str) -> flyte.File:
 
 ```python
 @env.task(cache="auto", cache_policy=flyte.CachePolicy(min_cached_age="1h"))
-async def cached_task(data: str) -> flyte.File:
+async def cached_task(data: str) -> flyte.io.File:
     """Only use cache if result is at least 1 hour old."""
     ...
 ```
@@ -100,7 +100,7 @@ async def light_task(data: str) -> str:
     requests=flyte.Resources(cpu="4", memory="16Gi"),
     limits=flyte.Resources(cpu="8", memory="32Gi"),
 )
-async def heavy_task(data: flyte.DataFrame) -> flyte.DataFrame:
+async def heavy_task(data: flyte.io.DataFrame) -> flyte.io.DataFrame:
     """Heavy data processing — large resources."""
     ...
 
@@ -108,7 +108,7 @@ async def heavy_task(data: flyte.DataFrame) -> flyte.DataFrame:
     requests=flyte.Resources(cpu="1", memory="4Gi", gpu="1", gpu_model="nvidia-a10g"),
     limits=flyte.Resources(cpu="2", memory="8Gi", gpu="1", gpu_model="nvidia-a10g"),
 )
-async def train_model(data: flyte.File) -> flyte.File:
+async def train_model(data: flyte.io.File) -> flyte.io.File:
     """GPU training task."""
     ...
 ```
@@ -124,7 +124,7 @@ async def train_model(data: flyte.File) -> flyte.File:
         gpu_model="nvidia-a10g",  # or "nvidia-a100", "nvidia-h100"
     ),
 )
-async def inference(batch: flyte.DataFrame) -> flyte.DataFrame:
+async def inference(batch: flyte.io.DataFrame) -> flyte.io.DataFrame:
     ...
 ```
 
@@ -229,7 +229,7 @@ async def process(large_data: dict) -> dict:
 
 # Good: pass by reference
 @env.task
-async def process(data_file: flyte.File) -> flyte.File:
+async def process(data_file: flyte.io.File) -> flyte.io.File:
     ...
 
 # Good: set inline output limit

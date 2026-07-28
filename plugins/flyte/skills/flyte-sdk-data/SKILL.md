@@ -19,7 +19,7 @@ Build ETL pipelines, data processing workflows, and data quality checks with Fly
 | Example code | https://github.com/unionai/unionai-examples |
 | Flyte MCP tools | Available via the `flyte-cluster` and `flyte-docs` MCP servers |
 
-**Ground unfamiliar APIs in real examples.** When unsure of a current Flyte 2 API, or for a pattern not shown below, and the `flyte-docs` search tools are available, search them first — by exact symbol (`TaskEnvironment`, `flyte.File`, `map_task`), since matching is literal substring, not semantic — then adapt a real example rather than inventing one, and cite the file or section you pulled it from. (Flyte 2 is not `flytekit`; priors are often wrong.)
+**Ground unfamiliar APIs in real examples.** When unsure of a current Flyte 2 API, or for a pattern not shown below, and the `flyte-docs` search tools are available, search them first — by exact symbol (`TaskEnvironment`, `flyte.io.File`, `map_task`), since matching is literal substring, not semantic — then adapt a real example rather than inventing one, and cite the file or section you pulled it from. (Flyte 2 is not `flytekit`; priors are often wrong.)
 
 ## ETL Pipeline Patterns
 
@@ -27,6 +27,7 @@ Build ETL pipelines, data processing workflows, and data quality checks with Fly
 
 ```python
 import flyte
+import flyte.io
 
 env = flyte.TaskEnvironment(
     name="etl-pipeline",
@@ -36,7 +37,7 @@ env = flyte.TaskEnvironment(
 )
 
 @env.task(retries=3, cache="auto")
-async def extract(source_uri: str) -> flyte.DataFrame:
+async def extract(source_uri: str) -> flyte.io.DataFrame:
     """Extract data from various sources."""
     import polars as pl
     if source_uri.endswith(".csv"):
@@ -45,10 +46,10 @@ async def extract(source_uri: str) -> flyte.DataFrame:
         df = pl.read_parquet(source_uri)
     else:
         raise ValueError(f"Unsupported format: {source_uri}")
-    return flyte.DataFrame(df)
+    return flyte.io.DataFrame(df)
 
 @env.task(retries=2, cache="auto")
-async def transform(df: flyte.DataFrame) -> flyte.DataFrame:
+async def transform(df: flyte.io.DataFrame) -> flyte.io.DataFrame:
     """Clean and transform data."""
     inner = df.to_polars()
     cleaned = (
@@ -59,10 +60,10 @@ async def transform(df: flyte.DataFrame) -> flyte.DataFrame:
             pl.col("date").str.strptime(pl.Date, "%Y-%m-%d").alias("date_parsed"),
         ])
     )
-    return flyte.DataFrame(cleaned)
+    return flyte.io.DataFrame(cleaned)
 
 @env.task(retries=1, cache="auto")
-async def load(df: flyte.DataFrame, destination: str) -> str:
+async def load(df: flyte.io.DataFrame, destination: str) -> str:
     """Load transformed data to destination."""
     inner = df.to_polars()
     if destination.endswith(".parquet"):
@@ -84,16 +85,16 @@ async def etl_pipeline(source_uri: str, destination: str) -> dict:
 
 ```python
 @env.task(cache="auto")
-async def extract_raw(source_uri: str) -> flyte.File:
+async def extract_raw(source_uri: str) -> flyte.io.File:
     """Extract and save raw data to remote storage."""
     import polars as pl
     df = pl.read_csv(source_uri)
     path = "/tmp/raw.parquet"
     df.write_parquet(path)
-    return flyte.File(path=path)
+    return flyte.io.File(path=path)
 
 @env.task(cache="auto")
-async def validate_raw(raw: flyte.File) -> dict:
+async def validate_raw(raw: flyte.io.File) -> dict:
     """Validate raw data quality."""
     df = pl.read_parquet(raw.path)
     return {
@@ -103,26 +104,26 @@ async def validate_raw(raw: flyte.File) -> dict:
     }
 
 @env.task(cache="auto")
-async def clean(raw: flyte.File) -> flyte.File:
+async def clean(raw: flyte.io.File) -> flyte.io.File:
     """Clean and normalize data."""
     df = pl.read_parquet(raw.path)
     cleaned = df.drop_nulls().unique()
     path = "/tmp/cleaned.parquet"
     cleaned.write_parquet(path)
-    return flyte.File(path=path)
+    return flyte.io.File(path=path)
 
 @env.task(cache="auto")
-async def enrich(cleaned: flyte.File) -> flyte.File:
+async def enrich(cleaned: flyte.io.File) -> flyte.io.File:
     """Enrich data with external features."""
     df = pl.read_parquet(cleaned.path)
     # Join with external feature store
     ...
     path = "/tmp/enriched.parquet"
     df.write_parquet(path)
-    return flyte.File(path=path)
+    return flyte.io.File(path=path)
 
 @env.task
-async def load_enriched(enriched: flyte.File, destination: str) -> str:
+async def load_enriched(enriched: flyte.io.File, destination: str) -> str:
     """Load enriched data to final destination."""
     ...
     return destination
@@ -149,12 +150,12 @@ async def etl_with_validation(source_uri: str, destination: str) -> dict:
 
 ```python
 @env.task(cache="auto")
-async def process_file(file_uri: str) -> flyte.DataFrame:
+async def process_file(file_uri: str) -> flyte.io.DataFrame:
     """Process a single data file."""
     import polars as pl
     df = pl.read_parquet(file_uri)
     cleaned = df.drop_nulls().unique()
-    return flyte.DataFrame(cleaned)
+    return flyte.io.DataFrame(cleaned)
 
 @env.task
 async def process_dataset(file_uris: list[str]) -> list:
@@ -163,14 +164,14 @@ async def process_dataset(file_uris: list[str]) -> list:
     return results
 
 @env.task
-async def merge_results(results: list) -> flyte.DataFrame:
+async def merge_results(results: list) -> flyte.io.DataFrame:
     """Merge processed results into a single DataFrame."""
     import polars as pl
     combined = pl.concat([r.to_polars() for r in results])
-    return flyte.DataFrame(combined)
+    return flyte.io.DataFrame(combined)
 
 @env.task
-async def main(file_uris: list[str]) -> flyte.DataFrame:
+async def main(file_uris: list[str]) -> flyte.io.DataFrame:
     processed = await process_dataset(file_uris)
     return await merge_results(processed)
 ```
@@ -218,7 +219,7 @@ async def main(file_uris: list[str]) -> list:
 
 ```python
 @env.task(cache="auto")
-async def validate_schema(df: flyte.DataFrame, expected_schema: dict) -> dict:
+async def validate_schema(df: flyte.io.DataFrame, expected_schema: dict) -> dict:
     """Validate DataFrame schema matches expected schema."""
     inner = df.to_polars()
     checks = {}
@@ -243,7 +244,7 @@ async def validate_schema(df: flyte.DataFrame, expected_schema: dict) -> dict:
     return checks
 
 @env.task(cache="auto")
-async def validate_nulls(df: flyte.DataFrame, max_null_pct: float = 0.1) -> dict:
+async def validate_nulls(df: flyte.io.DataFrame, max_null_pct: float = 0.1) -> dict:
     """Validate null percentages per column."""
     inner = df.to_polars()
     row_count = len(inner)
@@ -261,7 +262,7 @@ async def validate_nulls(df: flyte.DataFrame, max_null_pct: float = 0.1) -> dict
     return checks
 
 @env.task(cache="auto")
-async def validate_values(df: flyte.DataFrame, constraints: dict) -> dict:
+async def validate_values(df: flyte.io.DataFrame, constraints: dict) -> dict:
     """Validate value constraints (ranges, enums, patterns)."""
     inner = df.to_polars()
     checks = {}
@@ -282,7 +283,7 @@ async def validate_values(df: flyte.DataFrame, constraints: dict) -> dict:
 
 @env.task
 async def data_quality_gate(
-    df: flyte.DataFrame,
+    df: flyte.io.DataFrame,
     schema: dict,
     max_null_pct: float = 0.1,
     constraints: dict = None,
@@ -310,7 +311,7 @@ async def data_quality_gate(
 
 ```python
 @env.task(cache="auto")
-async def check_distribution(df: flyte.DataFrame, column: str, expected_stats: dict) -> dict:
+async def check_distribution(df: flyte.io.DataFrame, column: str, expected_stats: dict) -> dict:
     """Check if data distribution matches expected statistics."""
     inner = df.to_polars()
     col_data = inner[column].drop_nulls()
@@ -348,24 +349,24 @@ async def discover_files(prefix: str) -> list[str]:
     return files
 
 @env.task
-async def process_file(file_uri: str) -> flyte.File:
+async def process_file(file_uri: str) -> flyte.io.File:
     """Process a single file."""
     import polars as pl
     df = pl.read_parquet(file_uri)
     cleaned = df.drop_nulls()
     path = f"/tmp/cleaned_{file_uri.split('/')[-1]}"
     cleaned.write_parquet(path)
-    return flyte.File(path=path)
+    return flyte.io.File(path=path)
 
 @env.task
-async def merge_files(files: list[flyte.File]) -> flyte.File:
+async def merge_files(files: list[flyte.io.File]) -> flyte.io.File:
     """Merge processed files."""
     import polars as pl
     dfs = [pl.read_parquet(f.path) for f in files]
     combined = pl.concat(dfs)
     path = "/tmp/merged.parquet"
     combined.write_parquet(path)
-    return flyte.File(path=path)
+    return flyte.io.File(path=path)
 
 @env.task
 async def dynamic_etl(prefix: str, destination: str) -> dict:
@@ -381,7 +382,7 @@ async def dynamic_etl(prefix: str, destination: str) -> dict:
 
 ```python
 @env.task
-async def route_data(df: flyte.DataFrame, threshold: float) -> dict:
+async def route_data(df: flyte.io.DataFrame, threshold: float) -> dict:
     """Route data based on quality score."""
     score = compute_quality_score(df)
     if score >= threshold:
@@ -390,17 +391,17 @@ async def route_data(df: flyte.DataFrame, threshold: float) -> dict:
         return {"route": "review", "score": score}
 
 @env.task
-async def process_production(df: flyte.DataFrame) -> flyte.File:
+async def process_production(df: flyte.io.DataFrame) -> flyte.io.File:
     """Process data for production."""
     ...
 
 @env.task
-async def process_review(df: flyte.DataFrame) -> flyte.File:
+async def process_review(df: flyte.io.DataFrame) -> flyte.io.File:
     """Flag data for manual review."""
     ...
 
 @env.task
-async def conditional_pipeline(df: flyte.DataFrame, threshold: float) -> dict:
+async def conditional_pipeline(df: flyte.io.DataFrame, threshold: float) -> dict:
     """Route data based on quality."""
     routed = await route_data(df, threshold)
     if routed["route"] == "production":
@@ -445,14 +446,14 @@ async def process_jsonl_dir(dir_path: str) -> dict:
 
 | Format | Flyte Type | Best For |
 |---|---|---|
-| Parquet | `flyte.DataFrame` | Tabular data, ETL |
-| CSV | `flyte.File` | Small datasets, interchange |
+| Parquet | `flyte.io.DataFrame` | Tabular data, ETL |
+| CSV | `flyte.io.File` | Small datasets, interchange |
 | JSONL | `JsonlFile` / `JsonlDir` | Streaming records |
 | JSON | inline (dict) | Small structured data |
-| Pickle | `flyte.File` | Python objects |
-| NumPy (.npy/.npz) | `flyte.File` | Arrays, embeddings |
-| PNG/JPEG | `flyte.File` | Images |
-| Model (.pt/.safetensors) | `flyte.File` | Model checkpoints |
+| Pickle | `flyte.io.File` | Python objects |
+| NumPy (.npy/.npz) | `flyte.io.File` | Arrays, embeddings |
+| PNG/JPEG | `flyte.io.File` | Images |
+| Model (.pt/.safetensors) | `flyte.io.File` | Model checkpoints |
 
 ## Performance Tips for Data Pipelines
 
