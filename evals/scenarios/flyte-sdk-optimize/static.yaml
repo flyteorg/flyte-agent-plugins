@@ -1,0 +1,5 @@
+id: flyte-sdk-optimize-static
+skill: flyte-sdk-optimize
+tier: static
+# Static tier lints the SKILL.md itself (frontmatter, code fences, no secrets).
+# No agent, no LLM. Runs on every change.

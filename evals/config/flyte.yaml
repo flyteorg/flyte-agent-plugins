@@ -1,0 +1,11 @@
+# Flyte config for running the eval harness on demo.hosted.unionai.cloud.
+# Referenced by evals/workflows/eval_wf.py and the GitHub Actions `flyte-evals` job.
+# Auth is supplied out-of-band (device flow / api-key env), never committed here.
+admin:
+  endpoint: dns:///demo.hosted.unionai.cloud
+image:
+  builder: remote
+task:
+  org: demo
+  project: flytesnacks
+  domain: development

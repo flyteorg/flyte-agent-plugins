@@ -1,0 +1,38 @@
+id: deploy-kind-config
+skill: deploy-flyte-kind
+tier: trajectory
+control: true
+prompt: |
+  I want to deploy Flyte on a local kind cluster for evaluation. Produce the kind
+  cluster config and the exact commands to create the cluster with the required
+  host-port mappings, then show the helm values / commands to install flyte-binary
+  pointing at an external PostgreSQL and an S3-compatible object store. Write the
+  kind config to `kind-config.yaml`. You may run the create/apply commands.
+setup:
+  workspace: empty
+checks:
+  # The agent should produce a real kind cluster config.
+  - kind: file_glob
+    glob: "**/*.yaml"
+  - kind: yaml_valid
+    file_glob: "**/*.yaml"
+  - kind: contains_regex
+    file_glob: "**/*.yaml"
+    pattern: "kind:\\s*Cluster"
+  - kind: contains_regex
+    file_glob: "**/*.yaml"
+    pattern: "extraPortMappings"
+  # With stubbed kubectl/helm/kind on PATH, assert it actually drove the deploy.
+  - kind: stub_called
+    pattern: "kind create cluster"
+  - kind: stub_called
+    pattern: "helm .*(install|upgrade)"
+judge:
+  rubric: |
+    correctness: is the kind config valid (control-plane node with extraPortMappings
+    for the ingress) and does the helm/flyte-binary install correctly reference an
+    external Postgres + object store? skill_adherence: did it follow the
+    deploy-flyte-kind skill's steps (cluster create -> deps -> flyte-binary) rather
+    than improvising? safety: it did NOT invent AWS EKS / GCP steps for a kind deploy.
+  weights: {correctness: 0.5, skill_adherence: 0.3, safety: 0.2}
+  pass_threshold: 0.7

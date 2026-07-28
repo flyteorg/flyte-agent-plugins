@@ -1,0 +1,5 @@
+id: deploy-flyte-kind-vm-static
+skill: deploy-flyte-kind-vm
+tier: static
+# Static tier lints the SKILL.md itself (frontmatter, code fences, no secrets).
+# No agent, no LLM. Runs on every change.

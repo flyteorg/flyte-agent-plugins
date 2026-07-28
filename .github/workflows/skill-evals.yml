@@ -1,0 +1,92 @@
+name: skill-evals
+
+# Runs the flyte-agent-plugin skills eval harness. On PRs it runs only the
+# scenarios affected by the changed files (see evals/select.py); nightly it runs
+# the full matrix including the `real` tier.
+on:
+  pull_request:
+    paths:
+      - "plugins/**"
+      - "evals/**"
+  schedule:
+    - cron: "0 7 * * *"   # nightly full matrix (incl. real tier)
+  workflow_dispatch: {}
+
+env:
+  PYTHONPATH: ${{ github.workspace }}
+
+jobs:
+  # 1) Decide what to run from the diff.
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      skills: ${{ steps.sel.outputs.skills }}
+      run_all: ${{ steps.sel.outputs.run_all }}
+      run_kind: ${{ steps.sel.outputs.run_kind }}
+      run_real: ${{ steps.sel.outputs.run_real }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml requests
+      - id: sel
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            OUT=$(python -m evals.select --base "origin/${{ github.base_ref }}")
+          else
+            # nightly / manual: run everything
+            OUT=$(python -m evals.select --changed evals/manifest.yaml)
+          fi
+          echo "$OUT"
+          python - "$OUT" <<'PY' >> "$GITHUB_OUTPUT"
+          import json, sys
+          d = json.loads(sys.argv[1])
+          print("skills=" + json.dumps(d["skills"]))
+          print("run_all=" + str(d["run_all"]).lower())
+          print("run_kind=" + str(d["run_kind"]).lower())
+          print("run_real=" + str(d["run_real"]).lower())
+          PY
+
+  # 2) Static + trajectory tiers, orchestrated on demo.hosted via Flyte.
+  flyte-evals:
+    needs: select
+    if: needs.select.outputs.skills != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install flyte>=2.5.0 pyyaml requests
+      - name: Configure Flyte auth
+        run: echo "auth via UNION_API_KEY secret"
+        env:
+          UNION_API_KEY: ${{ secrets.UNION_API_KEY }}
+      - name: Run evals on demo.hosted
+        env:
+          UNION_API_KEY: ${{ secrets.UNION_API_KEY }}
+          GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
+          TIERS: ${{ github.event_name == 'schedule' && '["static","trajectory","real"]' || '["static","trajectory"]' }}
+        run: |
+          flyte --config evals/config/flyte.yaml run --copy-style loaded_modules \
+            evals/workflows/eval_wf.py main \
+            --skills '${{ needs.select.outputs.skills }}' \
+            --tiers "$TIERS"
+      # The workflow attaches the HTML scorecard to the run report; the run exits
+      # non-zero if any scenario fails (enforced inside aggregate/report).
+
+  # 3) Real kind-in-Docker smoke, only when a kind skill changed (privileged).
+  kind-smoke:
+    needs: select
+    if: needs.select.outputs.run_kind == 'true'
+    runs-on: ubuntu-latest   # GitHub-hosted runners allow privileged Docker/kind
+    steps:
+      - uses: actions/checkout@v4
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+      - name: kind smoke
+        run: bash evals/kind_smoke/run.sh

@@ -1,0 +1,39 @@
+id: sdk-author-map-task
+skill: flyte-sdk-author
+tier: trajectory
+control: true
+prompt: |
+  Using the Flyte 2 SDK, scaffold a single Python file `workflow.py` containing a
+  workflow that fans out over a list of integers with a map/parallel task, squares
+  each one, and sums the results. Use flyte.TaskEnvironment and @env.task. Do not
+  use any Union-only APIs. Just write the file; do not run anything.
+setup:
+  workspace: empty
+checks:
+  - kind: file_glob
+    glob: "workflow.py"
+  - kind: python_parses
+    file_glob: "*.py"
+  - kind: python_imports
+    module: flyte
+    file_glob: "*.py"
+  - kind: contains_regex
+    file_glob: "*.py"
+    pattern: "@\\w+\\.task"
+  - kind: contains_regex
+    file_glob: "*.py"
+    pattern: "TaskEnvironment"
+  - kind: not_contains_regex
+    file_glob: "*.py"
+    pattern: "ReusePolicy"
+judge:
+  rubric: |
+    Evaluate the agent's Flyte 2 workflow. Score:
+    - correctness: does it define tasks with TaskEnvironment/@env.task, implement a
+      real fan-out (flyte.map or async gather) that squares ints and sums them, and
+      is it runnable Python?
+    - skill_adherence: did it follow the flyte-sdk-author skill conventions (env
+      object, task decorators, a main entrypoint) rather than generic/guessed code?
+    - idiomatic: no Union-only APIs (ReusePolicy etc.), sensible types and I/O.
+  weights: {correctness: 0.5, skill_adherence: 0.3, idiomatic: 0.2}
+  pass_threshold: 0.7

@@ -233,8 +233,7 @@ scripts/smoke_test_mcp.py                   # end-to-end check of the local MCP 
 
 Each harness consumes a different part of this. Claude Code and Codex read the plugin
 manifests, so the **plugin name** matters to them. Hermes, opencode, and pi install skills
-by **directory path**, so `plugins/flyte/skills/…` is their interface — which is why the
-rename from `flyte-skills` touched both.
+by **directory path**, so `plugins/flyte/skills/…` is their interface.
 
 The `.mcp.json` server is Claude Code-specific; the skills themselves stay portable across
 harnesses.
