@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
 import sys
 
 import yaml
@@ -31,6 +32,9 @@ from evals.workflows.eval_wf import main
 
 # The one phase that means "the run finished and everything passed".
 _SUCCEEDED = "ACTION_PHASE_SUCCEEDED"
+
+# Repo root (…/evals/workflows/run_ci.py -> parents[2]); the copy-bundle base.
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def _config(path: str) -> tuple[str | None, str | None, str]:
@@ -61,9 +65,18 @@ def run(argv: list[str] | None = None) -> int:
 
     # init_from_api_key reads FLYTE_API_KEY from the environment when api_key is
     # None, and decodes the endpoint + org from it (headless — no browser flow).
-    flyte.init_from_api_key(project=project, domain=domain, image_builder=builder)
+    # root_dir pins the copy-bundle base to the repo root so the whole project
+    # tree is shipped (see copy_style="all" below).
+    flyte.init_from_api_key(
+        project=project, domain=domain, image_builder=builder, root_dir=_REPO_ROOT,
+    )
 
-    run = flyte.with_runcontext(copy_style="loaded_modules").run(
+    # copy_style="all" ships the entire project tree, not just modules imported at
+    # submission time. The harness imports evals.harness.* lazily inside the tasks
+    # and reads data files off disk (evals/manifest.yaml, evals/scenarios/**, and
+    # plugins/flyte/skills/**), resolved relative to the repo root — none of which
+    # "loaded_modules" would copy, which is what caused ModuleNotFoundError.
+    run = flyte.with_runcontext(copy_style="all").run(
         main, skills=skills, tiers=tiers,
     )
     print(f"Submitted run: {run.name}\n  {run.url}", flush=True)
