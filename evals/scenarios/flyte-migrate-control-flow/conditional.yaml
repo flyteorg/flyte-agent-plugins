@@ -1,0 +1,63 @@
+id: migrate-control-flow-conditional
+skill: flyte-migrate-control-flow
+tier: trajectory
+control: true
+prompt: |
+  Migrate this Flyte 1 (flytekit) module that uses `conditional()` branching to
+  Flyte 2, replacing the DSL with native Python control flow. Write the result to
+  `migrated.py`. Do not run anything.
+
+  ```python
+  import flytekit
+  from flytekit import conditional
+
+  @flytekit.task
+  def is_positive(x: int) -> bool:
+      return x > 0
+
+  @flytekit.task
+  def double(x: int) -> int:
+      return x * 2
+
+  @flytekit.task
+  def negate(x: int) -> int:
+      return -x
+
+  @flytekit.workflow
+  def main(x: int) -> int:
+      return (
+          conditional("check")
+          .if_(is_positive(x=x).is_true())
+          .then(double(x=x))
+          .else_()
+          .then(negate(x=x))
+      )
+  ```
+setup:
+  workspace: empty
+checks:
+  - kind: file_glob
+    glob: "migrated.py"
+  - kind: python_parses
+    file_glob: "*.py"
+  - kind: python_imports
+    module: flyte
+    file_glob: "*.py"
+  - kind: contains_regex
+    file_glob: "*.py"
+    pattern: "\\bif\\b"
+  # v1 branching DSL must be gone.
+  - kind: not_contains_regex
+    file_glob: "*.py"
+    pattern: "conditional\\("
+  - kind: not_contains_regex
+    file_glob: "*.py"
+    pattern: "import flytekit"
+judge:
+  rubric: |
+    correctness: does migrated.py express the branch as native Python if/else
+    (double when positive, negate otherwise) inside an orchestrating @env.task?
+    skill_adherence: no conditional()/if_()/then() DSL, uses TaskEnvironment +
+    @env.task. completeness: no leftover flytekit constructs.
+  weights: {correctness: 0.5, skill_adherence: 0.3, completeness: 0.2}
+  pass_threshold: 0.7

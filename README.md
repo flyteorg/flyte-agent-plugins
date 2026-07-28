@@ -134,6 +134,20 @@ pi install git:github.com/flyteorg/flyte-agent-plugins@<tag>         # pinned to
 | [`flyte-sdk-data`](plugins/flyte/skills/flyte-sdk-data) | Handles data engineering patterns: ETL pipelines, data processing, data quality checks, fanout/map tasks, conditions, dynamic workflows, and batch data transformations. For: ETL, Parquet, CSV, JsonlFile/Dir, schema validation. |
 | [`flyte-sdk-ml`](plugins/flyte/skills/flyte-sdk-ml) | Handles ML workload patterns: model training, hyperparameter optimization, experiment tracking, model evaluation and selection, batch inference, real-time serving, and model monitoring. For: PyTorch, scikit-learn, HuggingFace, GPU, drift detection. |
 
+### Migration (Flyte 1 → 2)
+
+Convert existing Flyte 1 (`flytekit`) code to Flyte 2. Distilled from the official
+[Flyte 1 → 2 migration guide](https://www.union.ai/docs/v2/flyte/user-guide/migration/flyte-2/).
+
+| Skill | Description |
+|-------|-------------|
+| [`flyte-migrate`](plugins/flyte/skills/flyte-migrate) | Start-here migration orchestrator: the `flytekit`→`flyte` shift, the terminology/concept mapping, the two mechanical changes, an incremental migration strategy, hybrid v1/v2 pipelines during transition, and the gotchas — routes to the specific skills below. |
+| [`flyte-migrate-tasks-workflows`](plugins/flyte/skills/flyte-migrate-tasks-workflows) | Migrate `@task`/`@workflow`/`@dynamic` into a single `@env.task` on a `TaskEnvironment`; sequential ordering without `>>`, nested "subworkflows" as tasks, and the parameter-mapping table. |
+| [`flyte-migrate-config`](plugins/flyte/skills/flyte-migrate-config) | Migrate task configuration (images `ImageSpec`→`flyte.Image`, resources/GPUs, `cache_version`→`cache`, secrets, `LaunchPlan`/`CronSchedule`→`Trigger`/`Cron`) and the `pyflyte`→`flyte` CLI / config files. |
+| [`flyte-migrate-control-flow`](plugins/flyte/skills/flyte-migrate-control-flow) | Replace `conditional()` with native `if`/`else`, `@dynamic` with plain Python loops, `on_failure` with `try`/`except`, and `map_task` with `flyte.map` / `asyncio.gather`. |
+| [`flyte-migrate-data-io`](plugins/flyte/skills/flyte-migrate-data-io) | Migrate data types & I/O: `FlyteFile`/`FlyteDirectory`→`flyte.io.File`/`Dir`, `StructuredDataset`→`flyte.io.DataFrame`, dataclasses/Pydantic as task I/O. |
+| [`flyte-migrate-ml`](plugins/flyte/skills/flyte-migrate-ml) | Migrate ML workloads (training, HPO, GPU/deep learning, batch inference, end-to-end pipelines) and the new-in-v2 patterns (real-time serving, apps, sandboxed execution) they unlock. |
+
 Example:
 
 ```

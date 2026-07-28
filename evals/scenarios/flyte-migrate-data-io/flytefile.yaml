@@ -1,0 +1,57 @@
+id: migrate-data-io-flytefile
+skill: flyte-migrate-data-io
+tier: trajectory
+control: true
+prompt: |
+  Migrate this Flyte 1 (flytekit) module to Flyte 2, converting the FlyteFile and
+  StructuredDataset I/O to the Flyte 2 equivalents. Write the result to
+  `migrated.py`. Do not run anything.
+
+  ```python
+  import flytekit
+  from flytekit import task, workflow
+  from flytekit.types.file import FlyteFile
+  from flytekit.types.structured import StructuredDataset
+
+  @task
+  def load(path: str) -> FlyteFile:
+      return FlyteFile(path)
+
+  @task
+  def to_table(f: FlyteFile) -> StructuredDataset:
+      import pandas as pd
+      return StructuredDataset(dataframe=pd.read_csv(f.path))
+
+  @workflow
+  def main(path: str) -> StructuredDataset:
+      return to_table(f=load(path=path))
+  ```
+setup:
+  workspace: empty
+checks:
+  - kind: file_glob
+    glob: "migrated.py"
+  - kind: python_parses
+    file_glob: "*.py"
+  - kind: python_imports
+    module: flyte
+    file_glob: "*.py"
+  # v2 offloaded types.
+  - kind: contains_regex
+    file_glob: "*.py"
+    pattern: "File|DataFrame"
+  # v1 types must be gone.
+  - kind: not_contains_regex
+    file_glob: "*.py"
+    pattern: "FlyteFile|StructuredDataset"
+  - kind: not_contains_regex
+    file_glob: "*.py"
+    pattern: "import flytekit"
+judge:
+  rubric: |
+    correctness: FlyteFile -> flyte.io.File and StructuredDataset -> flyte.io.DataFrame,
+    with the load -> to_table -> main flow preserved as @env.task functions.
+    skill_adherence: uses TaskEnvironment + @env.task + flyte.io types. completeness:
+    no leftover flytekit / FlyteFile / StructuredDataset references.
+  weights: {correctness: 0.5, skill_adherence: 0.3, completeness: 0.2}
+  pass_threshold: 0.7

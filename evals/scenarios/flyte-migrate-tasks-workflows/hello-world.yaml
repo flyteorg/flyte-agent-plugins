@@ -1,0 +1,55 @@
+id: migrate-tasks-hello-world
+skill: flyte-migrate-tasks-workflows
+tier: trajectory
+control: true
+prompt: |
+  Migrate this Flyte 1 (flytekit) module to Flyte 2. Write the migrated code to
+  `migrated.py`. Do not run anything.
+
+  ```python
+  import flytekit
+
+  @flytekit.task
+  def say_hello(name: str) -> str:
+      return f"Hello, {name}!"
+
+  @flytekit.task
+  def to_upper(greeting: str) -> str:
+      return greeting.upper()
+
+  @flytekit.workflow
+  def main(name: str) -> str:
+      greeting = say_hello(name=name)
+      return to_upper(greeting=greeting)
+  ```
+setup:
+  workspace: empty
+checks:
+  - kind: file_glob
+    glob: "migrated.py"
+  - kind: python_parses
+    file_glob: "*.py"
+  - kind: python_imports
+    module: flyte
+    file_glob: "*.py"
+  - kind: contains_regex
+    file_glob: "*.py"
+    pattern: "TaskEnvironment"
+  - kind: contains_regex
+    file_glob: "*.py"
+    pattern: "@\\w+\\.task"
+  # The whole point of the migration: v1 constructs must be gone.
+  - kind: not_contains_regex
+    file_glob: "*.py"
+    pattern: "import flytekit"
+  - kind: not_contains_regex
+    file_glob: "*.py"
+    pattern: "@\\w*\\.?workflow"
+judge:
+  rubric: |
+    correctness: is migrated.py a faithful Flyte 2 port — say_hello + to_upper as
+    @env.task, and main as an orchestrating task that calls them (no @workflow)?
+    skill_adherence: TaskEnvironment created once, @env.task used, sequential calls
+    without the `>>` operator. completeness: no leftover flytekit imports/decorators.
+  weights: {correctness: 0.5, skill_adherence: 0.3, completeness: 0.2}
+  pass_threshold: 0.7

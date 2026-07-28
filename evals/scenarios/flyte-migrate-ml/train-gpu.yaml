@@ -1,0 +1,50 @@
+id: migrate-ml-train-gpu
+skill: flyte-migrate-ml
+tier: trajectory
+control: true
+prompt: |
+  Migrate this Flyte 1 (flytekit) GPU training module to Flyte 2. Write the result
+  to `migrated.py`. Do not run anything.
+
+  ```python
+  import flytekit
+  from flytekit import task, workflow, Resources, ImageSpec
+
+  image = ImageSpec(packages=["torch", "torchvision"])
+
+  @task(container_image=image, requests=Resources(cpu="4", mem="16Gi", gpu="1"))
+  def train(epochs: int) -> str:
+      import torch
+      return f"trained {epochs} epochs on {torch.cuda.device_count()} gpus"
+
+  @workflow
+  def main(epochs: int) -> str:
+      return train(epochs=epochs)
+  ```
+setup:
+  workspace: empty
+checks:
+  - kind: file_glob
+    glob: "migrated.py"
+  - kind: python_parses
+    file_glob: "*.py"
+  - kind: python_imports
+    module: flyte
+    file_glob: "*.py"
+  - kind: contains_regex
+    file_glob: "*.py"
+    pattern: "TaskEnvironment"
+  - kind: contains_regex
+    file_glob: "*.py"
+    pattern: "gpu|GPU"
+  - kind: not_contains_regex
+    file_glob: "*.py"
+    pattern: "ImageSpec|import flytekit"
+judge:
+  rubric: |
+    correctness: training task ported to @env.task with GPU resources expressed the
+    Flyte 2 way (e.g. a "T4:1"-style gpu string / flyte.Resources on the
+    TaskEnvironment), image via flyte.Image. skill_adherence: image/resources set once
+    on the environment. completeness: no ImageSpec/flytekit leftovers.
+  weights: {correctness: 0.5, skill_adherence: 0.3, completeness: 0.2}
+  pass_threshold: 0.7
