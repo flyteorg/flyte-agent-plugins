@@ -63,18 +63,20 @@ jobs:
       - run: pip install flyte>=2.5.0 pyyaml requests
       - name: Run evals on demo.hosted
         env:
-          # The flyte v2 CLI authenticates to demo.hosted via an API key read from
-          # FLYTE_API_KEY, sourced from the repo secret DEMO_HOSTED_API_KEY.
+          # The flyte v2 SDK authenticates to demo.hosted via an API key read from
+          # FLYTE_API_KEY, sourced from the repo secret DEMO_HOSTED_API_KEY. (The
+          # GLM judge key is supplied to task pods out-of-band via the Flyte
+          # secret `glm-api-key`, not through the CI environment.)
           FLYTE_API_KEY: ${{ secrets.DEMO_HOSTED_API_KEY }}
-          GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
           TIERS: ${{ github.event_name == 'schedule' && '["static","trajectory","real"]' || '["static","trajectory"]' }}
+        # run_ci.py submits the workflow, waits for the run to reach a terminal
+        # phase, and exits non-zero unless it SUCCEEDED — unlike `flyte run`,
+        # which exits 0 as soon as the run is launched. The run itself fails when
+        # any scenario fails (see eval_wf.main), so this gates on eval results.
         run: |
-          flyte --config evals/config/flyte.yaml run --copy-style loaded_modules \
-            evals/workflows/eval_wf.py main \
+          python -m evals.workflows.run_ci \
             --skills '${{ needs.select.outputs.skills }}' \
             --tiers "$TIERS"
-      # The workflow attaches the HTML scorecard to the run report; the run exits
-      # non-zero if any scenario fails (enforced inside aggregate/report).
 
   # 3) Real kind-in-Docker smoke, only when a kind skill changed (privileged).
   kind-smoke:

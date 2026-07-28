@@ -97,7 +97,16 @@ def main(skills: list[str] | None = None,
         return {"total": 0, "passed": 0, "failed": 0, "results": [], "markdown": "no units selected"}
 
     results = [r for r in flyte.map(eval_unit, units) if isinstance(r, dict)]
-    return aggregate(results)
+    summary = aggregate(results)
+    # Fail the run (terminal phase != SUCCEEDED) when any scenario fails, so CI —
+    # which gates on the run's terminal phase — reports eval failures rather than
+    # going green on a completed-but-failing run. aggregate() has already attached
+    # the HTML scorecard, so it survives on that action's report tab.
+    if summary.get("failed"):
+        raise RuntimeError(
+            f"{summary['failed']} of {summary['total']} eval scenarios failed"
+        )
+    return summary
 
 
 if __name__ == "__main__":
