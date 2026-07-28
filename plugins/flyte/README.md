@@ -40,6 +40,24 @@ two bundled MCP servers.
 - **`flyte-sdk-ml`** — ML workload patterns (training, HPO, experiment tracking, evaluation,
   batch/real-time inference, monitoring).
 
+### Migration (Flyte 1 → 2)
+
+Convert existing Flyte 1 (`flytekit`) code to Flyte 2, distilled from the official
+[migration guide](https://www.union.ai/docs/v2/flyte/user-guide/migration/flyte-2/).
+
+- **`flyte-migrate`** — start-here orchestrator: the `flytekit`→`flyte` shift, concept
+  mapping, the two mechanical changes, incremental strategy, hybrid v1/v2 pipelines, gotchas.
+- **`flyte-migrate-tasks-workflows`** — `@task`/`@workflow`/`@dynamic` → a single `@env.task`
+  on a `TaskEnvironment`; ordering without `>>`; subworkflows as tasks.
+- **`flyte-migrate-config`** — images (`ImageSpec`→`flyte.Image`), resources/GPUs, caching,
+  secrets, scheduling (`LaunchPlan`/`CronSchedule`→`Trigger`/`Cron`), and `pyflyte`→`flyte`.
+- **`flyte-migrate-control-flow`** — `conditional()`→`if`/`else`, `@dynamic`→plain loops,
+  `on_failure`→`try`/`except`, `map_task`→`flyte.map`/`asyncio.gather`.
+- **`flyte-migrate-data-io`** — `FlyteFile`/`FlyteDirectory`→`flyte.io.File`/`Dir`,
+  `StructuredDataset`→`flyte.io.DataFrame`, dataclasses/Pydantic I/O.
+- **`flyte-migrate-ml`** — training, HPO, GPU/deep learning, batch inference, and the
+  new-in-v2 patterns (serving, apps, sandboxed execution).
+
 ## Bundled MCP servers
 
 **Claude Code only.** The servers live in `.mcp.json`, which Claude Code reads by
