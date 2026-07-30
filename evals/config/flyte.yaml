@@ -7,5 +7,5 @@ image:
   builder: remote
 task:
   org: demo
-  project: flytesnacks
+  project: flyte-agent-plugins-evals
   domain: development
