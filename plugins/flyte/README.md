@@ -57,6 +57,9 @@ Convert existing Flyte 1 (`flytekit`) code to Flyte 2, distilled from the offici
   `StructuredDataset`→`flyte.io.DataFrame`, dataclasses/Pydantic I/O.
 - **`flyte-migrate-ml`** — training, HPO, GPU/deep learning, batch inference, and the
   new-in-v2 patterns (serving, apps, sandboxed execution).
+- **`flyte-migrate-slurm`** — Slurm (`sbatch`/`srun`) → Flyte 2: `#SBATCH` pragmas →
+  `TaskEnvironment` config, job arrays → `flyte.map`, `--dependency` chains → plain Python,
+  multi-node `srun` → `ClusteredTaskEnvironment`, `--requeue` → retries/checkpoints/spot.
 
 ## Bundled MCP servers
 
