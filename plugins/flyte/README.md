@@ -60,52 +60,66 @@ Convert existing Flyte 1 (`flytekit`) code to Flyte 2, distilled from the offici
 
 ## Bundled MCP servers
 
-**Claude Code only.** The servers live in `.mcp.json`, which Claude Code reads by
-convention; Codex, Hermes, opencode, and pi install the skills and nothing else. They all
-support MCP, so you can add these by hand — see
-[Adding the MCP servers elsewhere](../../README.md#adding-the-mcp-servers-elsewhere).
+The servers live in `.mcp.json`. Claude Code reads that file by convention; Codex picks it
+up through the `mcpServers` entry in `.codex-plugin/plugin.json`. Hermes, opencode, and pi
+install the skills and nothing else — they all support MCP, so you can add these by hand,
+see [Adding the MCP servers elsewhere](../../README.md#adding-the-mcp-servers-elsewhere).
 
-The plugin's `.mcp.json` declares **two MCP servers**, split so nothing is duplicated:
+`.mcp.json` declares **two MCP servers**, split so nothing is duplicated:
 
 - **`flyte-docs`** — hosted HTTP, 3 `search` tools over Flyte SDK examples, docs examples,
   and `llms.txt`. Read-only, unauthenticated, **operated by Union**. Needs nothing at all,
   so search works the moment you install. Your queries do leave your machine.
-- **`flyte-cluster`** — local stdio (`scripts/flyte_mcp_stdio.py`), 13 control-plane tools:
-  run and inspect tasks, manage runs, apps, and triggers. Needs
-  [`uv`](https://docs.astral.sh/uv/) and a Flyte config with `project` and `domain`.
+- **`flyte-cluster`** — local stdio, 29 control-plane tools: run and inspect tasks, runs,
+  actions, and logs; manage apps, triggers, projects, secrets, and conditions; `whoami`.
+  Needs [`uv`](https://docs.astral.sh/uv/) (for `uvx`) and a Flyte login.
 
-**A cluster is optional.** `flyte-cluster` starts either way and offers nothing until one is
-reachable, so the plugin still works while you are deploying your first cluster. It is
-tenant-agnostic — `flyte.init_from_config()` targets whatever control plane your `flyte`
-CLI is authenticated against. After logging in, run `/reload-plugins` (or restart Claude
-Code) so the server respawns and picks the tools up — the choice is made at startup, and
-plugin MCP servers can't be restarted from `/mcp`.
+`flyte-cluster` is the SDK's own published entry point — no wrapper script and no path to
+expand, so the same line works in every harness:
 
-To test it, run `python3 scripts/smoke_test_mcp.py` from the repo root — it reports what it
-landed in. (`flyte-docs` is hosted, so check it with
+```
+uvx --from "flyte[mcp]>=2.5.18" flyte-mcp --transport stdio \
+  --tool-groups task,run,action,logs,app,trigger,project,secret,condition,identity
+```
+
+Two things about that command are deliberate:
+
+- **`>=2.5.18`** is the first release that caps `mcp<2`. Below it, `mcp` 2.0.0 resolves,
+  `mcp.server.fastmcp` is gone, and the server dies at import claiming "mcp is not installed".
+- **The `search` groups are left out.** `flyte-docs` already serves those three tools from a
+  hosted corpus; enabling them here would shallow-clone ~120 MB into `~/.flyte/mcp` on first
+  launch for no gain.
+
+**A cluster is optional.** The server starts even with no Flyte config at all, so the plugin
+still works while you are deploying your first cluster — the tools are registered either way
+and simply fail when called until you are logged in. It is tenant-agnostic: config discovery
+is the SDK's normal one, so it targets whatever control plane your `flyte` CLI is
+authenticated against, and nothing needs restarting once you log in.
+
+To test it, run `python3 scripts/smoke_test_mcp.py` from the repo root — it spawns the
+server exactly as a client does, lists the tools, and makes one real read-only call.
+(`flyte-docs` is hosted, so check it with
 `curl https://flyte-mcp.apps.demo.hosted.unionai.cloud/health` instead.)
 
 ### Configuring `flyte-cluster`
 
-Set these in your shell or in the `env` block of an MCP config. The plugin's own `.mcp.json`
-sets none of them, so ambient values apply.
+Change what is served by editing `args` in `.mcp.json`: `--tool-groups` (valid groups are
+`all`, `core`, `task`, `run`, `action`, `logs`, `app`, `trigger`, `project`, `secret`,
+`condition`, `identity`, `search`), `--tools` for an explicit tool list instead, or
+`--read-only` to narrow whatever those selected down to the tools annotated
+`readOnlyHint=True`. `uvx --from "flyte[mcp]" flyte-mcp --help` lists the rest.
+
+Two environment variables are read at startup. Set them in your shell or in an `env` block;
+the plugin's own `.mcp.json` sets neither, so ambient values apply.
 
 | Variable | Effect |
 |---|---|
-| `FLYTE_MCP_LOCAL_SEARCH` | serve search here, from a local corpus (~120 MB under `~/.flyte/mcp`) instead of the hosted server — offline and private |
-| `FLYTE_MCP_TOOL_GROUPS` | override the automatic choice; valid groups are `all`, `core`, `task`, `run`, `app`, `trigger`, `search` |
-| `FLYTE_MCP_TOOLS` | an explicit tool list (mutually exclusive with groups) |
-| `FLYTE_MCP_CONFIG` | a specific Flyte config file, instead of normal discovery |
-| `FLYTE_MCP_PROJECT` / `FLYTE_MCP_DOMAIN` | override the project/domain from the config |
-| `FLYTE_MCP_TASK_ALLOWLIST` / `_APP_` / `_TRIGGER_` | restrict which resources the tools may target |
+| `FLYTE_MCP_PROJECT` | override the project from the resolved config |
+| `FLYTE_MCP_DOMAIN` | override the domain from the resolved config |
 
-Setting `FLYTE_MCP_TOOL_GROUPS`/`FLYTE_MCP_TOOLS` overrides the automatic choice, including
-offering control-plane tools while disconnected — those will fail when called.
-
-Note there is no per-server toggle for plugin MCP servers: Claude Code manages them through
-plugin installation, not `/mcp`. So `FLYTE_MCP_LOCAL_SEARCH` moves search into
-`flyte-cluster` but does not un-declare `flyte-docs` — suppressing that needs a
-`deniedMcpServers` entry or disabling the plugin.
+Note there is no per-server toggle for plugin MCP servers in Claude Code — it manages them
+through plugin installation, not `/mcp`. Suppressing one needs a `deniedMcpServers` entry or
+disabling the plugin.
 
 To build an MCP server of your own — with allowlists, auth, and a shared endpoint for a
 team — ask the `flyte-docs` search tools for `FlyteMCPAppEnvironment`; they return the

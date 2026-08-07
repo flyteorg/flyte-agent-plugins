@@ -5,12 +5,15 @@
       "url": "https://flyte-mcp.apps.demo.hosted.unionai.cloud/flyte-mcp/mcp"
     },
     "flyte-cluster": {
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "run",
-        "--quiet",
-        "--no-project",
-        "${CLAUDE_PLUGIN_ROOT}/scripts/flyte_mcp_stdio.py"
+        "--from",
+        "flyte[mcp]>=2.5.18",
+        "flyte-mcp",
+        "--transport",
+        "stdio",
+        "--tool-groups",
+        "task,run,action,logs,app,trigger,project,secret,condition,identity"
       ]
     }
   }
