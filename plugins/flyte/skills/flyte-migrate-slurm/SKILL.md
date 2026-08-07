@@ -1,6 +1,6 @@
 ---
 name: flyte-migrate-slurm
-description: Migrates Slurm (sbatch/srun) HPC workloads to Flyte 2 (the flyte Python SDK) — job scripts become typed tasks, `#SBATCH` pragmas become TaskEnvironment config, job arrays become flyte.map, and multi-node training becomes a clustered task environment. Use when porting an HPC or supercomputer cluster workload off Slurm, translating `#SBATCH` pragmas, or replacing sbatch chains, job arrays, and module load with Flyte. Trigger words are sbatch, srun, SLURM, `#SBATCH`, HPC, job array, partition, squeue, sinfo, module load, scancel, supercomputer, cluster migration.
+description: Migrates Slurm (sbatch/srun) HPC workloads to Flyte 2 (the flyte Python SDK) — job scripts become typed tasks, `#SBATCH` pragmas become TaskEnvironment config, job arrays become flyte.map or asyncio.gather, and multi-node training becomes a clustered task environment. Use when porting an HPC or supercomputer cluster workload off Slurm, translating `#SBATCH` pragmas, or replacing sbatch chains, job arrays, and module load with Flyte. Trigger words are sbatch, srun, SLURM, `#SBATCH`, HPC, job array, partition, squeue, sinfo, module load, scancel, supercomputer, cluster migration.
 ---
 
 # Slurm to Flyte 2 Migration Skill
