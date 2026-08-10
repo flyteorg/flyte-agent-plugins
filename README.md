@@ -37,15 +37,16 @@ To switch to a different version later, remove and re-add the marketplace:
 The skills are plain [Agent Skills](https://agentskills.io) (`SKILL.md` + YAML
 frontmatter), so they work in any harness that supports the standard.
 
-> **Only Claude Code gets the MCP servers automatically.** They are declared in
-> `plugins/flyte/.mcp.json`, which Claude Code reads by convention. Every other harness
-> installs the **skills only** — you can still wire the servers up by hand in a few lines,
-> see [Adding the MCP servers elsewhere](#adding-the-mcp-servers-elsewhere).
+> **Only Claude Code and Codex get the MCP servers automatically.** They are declared in
+> `plugins/flyte/.mcp.json` — Claude Code reads that file by convention, Codex is pointed at
+> it by `.codex-plugin/plugin.json`. The other harnesses install the **skills only**; you can
+> still wire the servers up by hand in a few lines, see
+> [Adding the MCP servers elsewhere](#adding-the-mcp-servers-elsewhere).
 
 | Harness | Skills | MCP servers |
 |---|---|---|
 | Claude Code | all 14 | both, automatically |
-| Codex CLI | all 14 | none — add manually |
+| Codex CLI | all 14 | both, automatically |
 | Hermes | per-skill | none — add manually |
 | opencode | all 14 | none — add manually |
 | pi | all 14 | none — add manually |
@@ -61,12 +62,12 @@ codex plugin marketplace add flyteorg/flyte-agent-plugins            # or --ref 
 
 Then browse and install the plugins via `/plugins` inside Codex.
 
-Codex plugins *can* bundle MCP servers (via an `mcpServers` field pointing at an
-`.mcp.json`), but this one deliberately does not: our `.mcp.json` uses
-`${CLAUDE_PLUGIN_ROOT}` to locate the local launcher script, and Codex does not expand it
-([openai/codex#22842](https://github.com/openai/codex/issues/22842)), so the local server
-would fail to start. Add the servers manually instead — the hosted one needs no path and
-works fine.
+Both MCP servers come with it: `.codex-plugin/plugin.json` carries an `mcpServers` field
+pointing at the same `.mcp.json` Claude Code reads. (The key is spelled `mcpServers`, not
+the `mcp_servers` the Codex docs show — the manifest struct is `camelCase`,
+[openai/codex#22105](https://github.com/openai/codex/issues/22105).) Neither server needs a
+path expanded, so `${CLAUDE_PLUGIN_ROOT}` — which Codex does not expand,
+[openai/codex#22842](https://github.com/openai/codex/issues/22842) — never comes up.
 
 ### Hermes
 
@@ -164,35 +165,47 @@ Installing the plugin registers **two MCP servers**, split so nothing is duplica
 | Server | Tools | Needs |
 |---|---|---|
 | **`flyte-docs`** (hosted HTTP) | 3 `search` — Flyte SDK examples, docs examples, `llms.txt` | nothing at all |
-| **`flyte-cluster`** (local stdio) | 13 control-plane — run/inspect tasks, manage runs, apps, triggers | `uv`, plus a Flyte login |
+| **`flyte-cluster`** (local stdio) | 29 control-plane — tasks, runs, actions, logs, apps, triggers, projects, secrets, conditions, `whoami` | `uv`, plus a Flyte login |
 
 `flyte-docs` is a read-only, unauthenticated server **operated by Union**, so search works
 the moment you install — no setup, no corpus, no `uv`. Your search queries do leave your
-machine; set `FLYTE_MCP_LOCAL_SEARCH=1` to serve search from a local corpus instead
-(~120 MB cached under `~/.flyte/mcp`).
+machine.
 
-`flyte-cluster` is tenant-agnostic: it calls `flyte.init_from_config()`, so it acts on the same
-control plane your `flyte` CLI is authenticated against. **A cluster is optional** — it
-starts either way and offers nothing until one is reachable, so the plugin still works
-while you are deploying your first cluster. The tools appear once you are logged in
-(run `/reload-plugins`, or restart Claude Code — the choice is made at startup).
+`flyte-cluster` is the SDK's own `flyte-mcp` entry point, run straight from PyPI with
+`uvx` — nothing is vendored here:
 
-Test it end-to-end — this spawns the server exactly as Claude Code does, handshakes, and
-reports which mode it landed in:
+```
+uvx --from "flyte[mcp]>=2.5.18" flyte-mcp --transport stdio \
+  --tool-groups task,run,action,logs,app,trigger,project,secret,condition,identity
+```
+
+`>=2.5.18` is the first release that caps `mcp<2`; below it the server dies at import. The
+`search` groups are left out on purpose — `flyte-docs` already serves them hosted, and
+enabling them here shallow-clones ~120 MB into `~/.flyte/mcp` on first launch.
+
+It is tenant-agnostic: config discovery is the SDK's normal one, so it acts on the same
+control plane your `flyte` CLI is authenticated against. **A cluster is optional** — the
+server starts even with no Flyte config at all, so the plugin still works while you are
+deploying your first cluster; the tools are registered either way and simply fail when
+called until you are logged in.
+
+Test it end-to-end — this spawns the server exactly as a client does, handshakes, lists the
+tools, and makes one real read-only call:
 
 ```
 python3 scripts/smoke_test_mcp.py
 ```
 
-Override the automatic tool choice with `FLYTE_MCP_TOOL_GROUPS` / `FLYTE_MCP_TOOLS`, and
-scope with `FLYTE_MCP_CONFIG`, `FLYTE_MCP_PROJECT`, `FLYTE_MCP_DOMAIN`,
-`FLYTE_MCP_{TASK,APP,TRIGGER}_ALLOWLIST`, or `FLYTE_MCP_LOCAL_SEARCH` — see the plugin
-[README](plugins/flyte/README.md).
+Change what is served by editing `args` in `plugins/flyte/.mcp.json` (`--tool-groups`,
+`--tools`, `--read-only`), and scope it with `FLYTE_MCP_PROJECT` / `FLYTE_MCP_DOMAIN` — see
+the plugin [README](plugins/flyte/README.md).
 
 ### Adding the MCP servers elsewhere
 
-Codex, Hermes, opencode, and pi all support MCP — this plugin just doesn't configure it
-for them. Wiring it up yourself is a few lines.
+Hermes, opencode, and pi all support MCP — this plugin just doesn't configure it for them.
+(Claude Code and Codex get both servers from the plugin; use these snippets only if you
+want them configured globally rather than per-plugin.) Wiring it up yourself is a few
+lines.
 
 **`flyte-docs`** is plain remote HTTP with no auth and no local dependency, so it drops
 into any harness:
@@ -219,16 +232,39 @@ mcp_servers:
 
 pi uses the same `mcpServers` shape in `~/.pi/agent/mcp.json`.
 
-**`flyte-cluster`** is a local stdio process, so point your harness at the launcher script
-with an absolute path — there is no `${CLAUDE_PLUGIN_ROOT}` outside Claude Code:
+**`flyte-cluster`** is a local stdio process, but it is just the SDK's published
+`flyte-mcp` entry point run with `uvx` — no checkout, no path, so it is as portable as the
+hosted one. It needs [`uv`](https://docs.astral.sh/uv/) on `PATH` and picks up whatever
+control plane your `flyte` CLI is logged into:
 
-```
-uv run --quiet --no-project /abs/path/to/plugins/flyte/scripts/flyte_mcp_stdio.py
+```toml
+# Codex — ~/.codex/config.toml
+[mcp_servers.flyte-cluster]
+command = "uvx"
+args = ["--from", "flyte[mcp]>=2.5.18", "flyte-mcp", "--transport", "stdio",
+        "--tool-groups", "task,run,action,logs,app,trigger,project,secret,condition,identity"]
 ```
 
-Once [flyte-sdk#1319](https://github.com/flyteorg/flyte-sdk/pull/1319) ships, that becomes
-`uvx --from "flyte[mcp]" flyte-mcp --transport stdio` — no path, no script, portable
-everywhere.
+```json
+// opencode — opencode.json
+{ "mcp": { "flyte-cluster": { "type": "local", "enabled": true,
+  "command": ["uvx", "--from", "flyte[mcp]>=2.5.18", "flyte-mcp", "--transport", "stdio",
+              "--tool-groups",
+              "task,run,action,logs,app,trigger,project,secret,condition,identity"] } } }
+```
+
+```yaml
+# Hermes — ~/.hermes/config.yaml
+mcp_servers:
+  flyte-cluster:
+    command: "uvx"
+    args: ["--from", "flyte[mcp]>=2.5.18", "flyte-mcp", "--transport", "stdio",
+           "--tool-groups", "task,run,action,logs,app,trigger,project,secret,condition,identity"]
+```
+
+Drop `--tool-groups` to get everything, including the three `search` tools — but then the
+server shallow-clones a ~120 MB corpus into `~/.flyte/mcp` on first launch, which is exactly
+what `flyte-docs` exists to avoid.
 
 ## Layout
 
@@ -238,9 +274,8 @@ All skills live in the single `flyte` plugin:
 .claude-plugin/marketplace.json             # marketplace catalog
 package.json                                # pi package manifest (pi.skills)
 plugins/flyte/.claude-plugin/plugin.json    # Claude Code plugin manifest
-plugins/flyte/.codex-plugin/plugin.json     # Codex plugin manifest
-plugins/flyte/.mcp.json                     # the two bundled MCP servers (Claude Code)
-plugins/flyte/scripts/flyte_mcp_stdio.py    # stdio adapter that .mcp.json launches
+plugins/flyte/.codex-plugin/plugin.json     # Codex plugin manifest (points at .mcp.json)
+plugins/flyte/.mcp.json                     # the two bundled MCP servers
 plugins/flyte/skills/<skill>/SKILL.md
 scripts/smoke_test_mcp.py                   # end-to-end check of the local MCP server
 ```
@@ -249,8 +284,9 @@ Each harness consumes a different part of this. Claude Code and Codex read the p
 manifests, so the **plugin name** matters to them. Hermes, opencode, and pi install skills
 by **directory path**, so `plugins/flyte/skills/…` is their interface.
 
-The `.mcp.json` server is Claude Code-specific; the skills themselves stay portable across
-harnesses.
+`.mcp.json` is shared by Claude Code (which finds it by convention) and Codex (which is
+pointed at it by `.codex-plugin/plugin.json`); the skills themselves stay portable across
+every harness.
 
 ## Contributing
 
