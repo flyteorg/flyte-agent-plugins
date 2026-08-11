@@ -130,7 +130,7 @@ The `#SBATCH --time` line has a richer counterpart than a single number. `timeou
         deadline=timedelta(hours=10),        # absolute budget across all attempts
     ),
 )
-async def train(...) -> File: ...
+async def train(lr: float = 3e-4) -> File: ...
 ```
 
 ## Job arrays and sweeps

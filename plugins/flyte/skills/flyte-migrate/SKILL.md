@@ -223,6 +223,7 @@ Migrate by theme. Start with tasks and workflows, then jump to whatever the work
 - **`flyte-migrate-control-flow`** — `conditional()` and `@dynamic` become plain Python `if`/loops, `on_failure` becomes `try`/`except`, and `map_task` → `flyte.map` / `asyncio.gather`.
 - **`flyte-migrate-data-io`** — `FlyteFile`/`FlyteDirectory` → `flyte.io.File`/`Dir`, `StructuredDataset` → `flyte.io.DataFrame`, dataclasses, and ETL patterns.
 - **`flyte-migrate-ml`** — small-model training, hyperparameter optimization, deep learning, batch inference, and end-to-end pipelines.
+- **`flyte-migrate-slurm`** — Slurm/HPC workloads: `#SBATCH` directives → `TaskEnvironment` resources, job arrays → `flyte.map`, multi-node `srun` training → clustered environments.
 
 ## Hybrid v1 and v2 pipelines
 
