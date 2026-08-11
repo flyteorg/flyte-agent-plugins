@@ -88,7 +88,7 @@ def main(skills: list[str] | None = None,
          harnesses: list[str] | None = None,
          tiers: list[str] | None = None) -> dict:
     """Top-level workflow: build the matrix, fan out, aggregate."""
-    from evals.harness.evaluate import skipped_scenario
+    from evals.harness.evaluate import errored_scenario, skipped_scenario
     from evals.harness.runners import get_runner
     from evals.harness.spec import load_scenarios
 
@@ -124,7 +124,18 @@ def main(skills: list[str] | None = None,
         return {"total": 0, "scored": 0, "skipped": 0, "errored": 0,
                 "regressions": 0, "rating": None, "results": [], "markdown": "no units selected"}
 
-    results = [r for r in flyte.map(eval_unit, units) if isinstance(r, dict)] if units else []
+    # A failed map element comes back as a non-dict; keep it on the scorecard as
+    # an errored result instead of silently dropping the scenario.
+    results = []
+    for u, r in zip(units, flyte.map(eval_unit, units) if units else []):
+        if isinstance(r, dict):
+            results.append(r)
+        else:
+            print(f"ERROR {u['scenario_id']} [{u.get('harness') or '-'}]: "
+                  f"eval action failed: {r!r}", flush=True)
+            results.append(errored_scenario(
+                by_id[u["scenario_id"]], u.get("harness"),
+                f"eval action failed: {r!r}").to_dict())
     # Add skipped harnesses as synthetic results (no task spent) for visibility.
     results += [skipped_scenario(by_id[u["scenario_id"]], u["harness"]).to_dict()
                 for u in skipped]

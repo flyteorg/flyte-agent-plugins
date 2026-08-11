@@ -1,14 +1,17 @@
 # flyte
 
-A single [Claude Code](https://docs.claude.com/en/docs/claude-code) plugin for
-[Flyte](https://flyte.org): cluster deployment and SDK / workflow authoring skills, plus
-two bundled MCP servers.
+A single plugin for [Flyte](https://flyte.org): cluster deployment and SDK / workflow
+authoring skills, plus two bundled MCP servers.
+[Claude Code](https://docs.claude.com/en/docs/claude-code) and
+[OpenAI Codex](https://developers.openai.com/plugins) install it as a full plugin — skills
+**and** MCP servers — and any harness that supports
+[Agent Skills](https://agentskills.io) (Hermes, opencode, pi) can install the skills.
 
 ## Skills
 
 ### Deployment
 
-- **`flyte-deploy-aws`** — deploy a Flyte v2 (`flyte-binary`) cluster on AWS from scratch:
+- **`flyte-deploy-aws`** — deploy a Flyte 2 (`flyte-binary`) cluster on AWS from scratch:
   EKS + S3 + RDS PostgreSQL + AWS Load Balancer Controller + `helm`, with optional TLS
   (ACM, incl. cross-account DNS) and Okta/OIDC SSO.
 - **`deploy-flyte-kind`** — deploy a complete Flyte stack on a [kind](https://kind.sigs.k8s.io/)
@@ -133,7 +136,7 @@ flyte-sdk repo, which stay current as the SDK changes.
 /plugin install flyte@flyte-agent-plugins
 ```
 
-Then ask Claude to, e.g., "deploy a Flyte v2 cluster on AWS", "deploy Flyte on kind", or
+Then ask Claude to, e.g., "deploy a Flyte 2 cluster on AWS", "deploy Flyte on kind", or
 "scaffold a Flyte workflow" — or invoke a skill directly, e.g.
 `/flyte:flyte-deploy-aws`.
 
@@ -148,16 +151,19 @@ and append `#<ref>` — a tag or branch name (not a bare commit SHA; tag the com
 (To change the pinned version later, `/plugin marketplace remove flyte-agent-plugins` and re-add
 with the new ref.)
 
-## Install (other agent harnesses)
+## Install (OpenAI Codex)
 
-The skills are standard [Agent Skills](https://agentskills.io) (`SKILL.md`), so they also
-work with:
-
-**OpenAI Codex CLI** — add the repo as a plugin marketplace, then install via `/plugins`:
+Add the repo as a plugin marketplace, then install via `/plugins` — the skills and both
+MCP servers come with it:
 
 ```
 codex plugin marketplace add flyteorg/flyte-agent-plugins    # or --ref <tag-or-branch> to pin
 ```
+
+## Install (other agent harnesses)
+
+The skills are standard [Agent Skills](https://agentskills.io) (`SKILL.md`), so they also
+work with:
 
 **Hermes** — install individual skills by repo path (default branch only):
 

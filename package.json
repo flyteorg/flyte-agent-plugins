@@ -1,6 +1,6 @@
 {
   "name": "flyte",
-  "version": "0.0.5",
+  "version": "0.3.0",
   "description": "Agent skills for working with Flyte.",
   "license": "Apache-2.0",
   "keywords": ["pi-package"],
