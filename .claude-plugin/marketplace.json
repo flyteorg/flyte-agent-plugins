@@ -4,12 +4,12 @@
     "name": "flyteorg",
     "url": "https://github.com/flyteorg/flyte-agent-plugins"
   },
-  "description": "Claude Code skills and MCP servers for working with Flyte.",
+  "description": "Agent skills and MCP servers for working with Flyte.",
   "plugins": [
     {
       "name": "flyte",
       "source": "./plugins/flyte",
-      "description": "Work with Flyte 2 — deploy Flyte v2 (flyte-binary) clusters on AWS or kind, author and run workflows, apps, agents, data, and ML workloads with the SDK, and operate your cluster through bundled MCP servers."
+      "description": "Work with Flyte 2. Deploy Flyte on AWS or kind, author and run workflows, apps, agents, data, and ML workloads with the SDK, and operate your cluster through bundled MCP servers."
     }
   ]
 }

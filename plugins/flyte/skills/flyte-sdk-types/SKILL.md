@@ -400,4 +400,4 @@ Default threshold is generous. For ML training outputs or large DataFrames, set 
 2. **Passing `flyte.io.File` as a string** — always use `flyte.io.File(path=...)` objects. The path string alone won't serialize.
 3. **Using Pandas instead of Polars** — Flyte 2's native DataFrame is Polars. Use `df.to_polars()` to get the underlying DataFrame.
 4. **Not registering custom transformers** — if you register a custom type transformer, it must be registered before task execution.
-5. **Forgetting `.path` on flyte.io.File** — inside a task, `file` is a FlyteFile object, not a string. Use `file.path` for the local path.
+5. **Forgetting `.path` on flyte.io.File** — inside a task, `file` is a `flyte.io.File` object, not a string. Use `file.path` for the local path.

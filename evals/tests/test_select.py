@@ -34,6 +34,15 @@ def test_kind_skill_sets_run_kind():
     assert out2["run_kind"] is False
 
 
+def test_scenario_change_selects_that_skill():
+    m = _manifest()
+    scs = load_scenarios()
+    out = select(["evals/scenarios/flyte-sdk-author/static.yaml"], m, scs)
+    assert out["run_all"] is False
+    assert out["skills"] == ["flyte-sdk-author"]
+    assert "flyte-sdk-author-static" in out["scenario_ids"]
+
+
 def test_unrelated_change_selects_nothing():
     m = _manifest()
     scs = load_scenarios()
