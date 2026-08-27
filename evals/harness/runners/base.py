@@ -18,7 +18,9 @@ from ..sandbox import Sandbox, install_skill
 from ..spec import Scenario
 
 # Files we never treat as "agent-produced artifacts" when snapshotting a workspace.
-_IGNORE = {".stublog", ".opencode", ".pi", ".git"}
+# `.hermes` holds the installed skill (would leak SKILL.md into the judge prompt as
+# agent output); `opencode.json` holds the GLM API key.
+_IGNORE = {".stublog", ".opencode", ".pi", ".hermes", ".git", "opencode.json"}
 
 
 @dataclass

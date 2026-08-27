@@ -170,6 +170,16 @@ def skipped_scenario(scenario: Scenario, harness: str) -> ScenarioResult:
     return res
 
 
+def errored_scenario(scenario: Scenario, harness: str | None, error: str) -> ScenarioResult:
+    """A ScenarioResult marked errored because the eval action died before
+    returning a verdict (e.g. a failed `flyte.map` element), so the scenario
+    stays on the scorecard instead of silently vanishing."""
+    res = ScenarioResult(scenario.id, scenario.skill, scenario.tier, harness=harness)
+    for arm in scenario.arms():
+        res.arms[arm] = ArmResult(arm=arm, error=error)
+    return res
+
+
 def evaluate_static(scenario: Scenario) -> ScenarioResult:
     skill_dir = REPO_ROOT / "plugins" / "flyte" / "skills" / scenario.skill
     results = lint_skill(skill_dir)
@@ -235,7 +245,7 @@ def _maybe_real_run(scenario: Scenario, sandbox) -> "checks_mod.CheckResult":
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         return checks_mod.CheckResult("real_run", False, f"flyte run failed to start: {e}")
     out = proc.stdout + proc.stderr
-    ok = proc.returncode == 0 and (spec.expect_status.upper() in out.upper() or proc.returncode == 0)
+    ok = proc.returncode == 0 and spec.expect_status.upper() in out.upper()
     tail = " / ".join(out.strip().splitlines()[-3:])
     return checks_mod.CheckResult("real_run", ok, f"exit {proc.returncode} :: {tail}")
 

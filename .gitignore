@@ -3,3 +3,7 @@ __pycache__/
 .ruff_cache/
 .flyte/
 .DS_Store
+.venv/
+*.egg-info/
+*.zip
+__MACOSX/

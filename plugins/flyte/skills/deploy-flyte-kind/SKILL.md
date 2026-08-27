@@ -1,6 +1,6 @@
 ---
 name: deploy-flyte-kind
-description: Deploy a complete Flyte stack (flyte-binary + a hosted PostgreSQL + an object store) onto a kind cluster, running on the user's own machine or a DigitalOcean VM (droplet). PostgreSQL is hosted (Supabase or external); the object store is AWS S3 or Cloudflare R2. Use when the user wants to run Flyte on kind — either reusing an existing kind cluster or creating a new one. For evaluation only (no TLS/auth on the base deployment).
+description: Deploy a complete Flyte stack (flyte-binary + a hosted PostgreSQL + an object store) onto a kind cluster, running on the user's own machine or a DigitalOcean VM (droplet). PostgreSQL is hosted (Supabase or external); the object store is AWS S3 or Cloudflare R2. Use when the user wants to run Flyte on kind — either reusing an existing kind cluster or creating a new one. For evaluation only (no TLS/auth on the base deployment; optional OIDC auth via Traefik + oauth2-proxy is covered).
 ---
 
 # Deploy Flyte to a kind cluster

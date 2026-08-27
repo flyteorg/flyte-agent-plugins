@@ -1,7 +1,8 @@
 """Map changed files -> the subset of scenarios to run.
 
 Used by CI to run only what a PR affects:
-  - a changed `plugins/flyte/skills/<skill>/**` -> that skill's scenarios
+  - a changed `plugins/flyte/skills/<skill>/**` or `evals/scenarios/<skill>/**`
+    -> that skill's scenarios
   - a change to engine/shared-infra paths (manifest.shared_infra_globs) -> run ALL
   - flags whether the kind DinD smoke and the real tier are in scope
 
@@ -27,6 +28,12 @@ import sys
 from evals.harness.spec import Manifest, load_scenarios, scenarios_by_skill
 
 SKILL_PATH_RE = re.compile(r"plugins/flyte/skills/([^/]+)/")
+SCENARIO_PATH_RE = re.compile(r"evals/scenarios/([^/]+)/")
+
+
+def _skill_for(path: str) -> str | None:
+    m = SKILL_PATH_RE.search(path) or SCENARIO_PATH_RE.search(path)
+    return m.group(1) if m else None
 
 
 def changed_from_git(base: str, repo_root: pathlib.Path) -> list[str]:
@@ -54,9 +61,7 @@ def select(changed: list[str], manifest: Manifest, scenarios, force_all: bool = 
     if run_all:
         chosen_skills = sorted(by_skill)
     else:
-        chosen_skills = sorted({
-            m.group(1) for p in changed if (m := SKILL_PATH_RE.search(p))
-        })
+        chosen_skills = sorted({s for p in changed if (s := _skill_for(p))})
 
     chosen = [sc for sk in chosen_skills for sc in by_skill.get(sk, [])]
     scenario_ids = sorted(sc.id for sc in chosen)
