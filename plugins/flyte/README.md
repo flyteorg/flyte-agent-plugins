@@ -81,23 +81,29 @@ see [Adding the MCP servers elsewhere](../../README.md#adding-the-mcp-servers-el
 expand, so the same line works in every harness:
 
 ```
-uvx --from "flyte[mcp]>=2.5.18" flyte-mcp --transport stdio \
-  --tool-groups task,run,action,logs,app,trigger,project,secret,condition,identity
+uvx --from "flyte[mcp]==2.6.10" flyte-mcp --transport stdio \
+  --tool-groups task,run,action,logs,app,trigger,project,secret,condition,identity \
+  --no-init-from-config
 ```
 
 Two things about that command are deliberate:
 
-- **`>=2.5.18`** is the first release that caps `mcp<2`. Below it, `mcp` 2.0.0 resolves,
-  `mcp.server.fastmcp` is gone, and the server dies at import claiming "mcp is not installed".
+- **`2.6.10`** caps `mcp<2`. Earlier releases than `2.5.18` can resolve `mcp` 2.0.0,
+  where `mcp.server.fastmcp` is gone and the server dies at import claiming "mcp is not installed".
+  The exact pin keeps tool metadata and behavior reproducible for users and reviewers.
+- **`--no-init-from-config`** prevents an unconfigured stdio server from starting an
+  interactive login on its JSON-RPC stdout. Set `FLYTE_MCP_PROJECT` and
+  `FLYTE_MCP_DOMAIN`, or pass `project` and `domain` to the relevant tool, before operating
+  on a cluster.
 - **The `search` groups are left out.** `flyte-docs` already serves those three tools from a
   hosted corpus; enabling them here would shallow-clone ~120 MB into `~/.flyte/mcp` on first
   launch for no gain.
 
 **A cluster is optional.** The server starts even with no Flyte config at all, so the plugin
 still works while you are deploying your first cluster — the tools are registered either way
-and simply fail when called until you are logged in. It is tenant-agnostic: config discovery
-is the SDK's normal one, so it targets whatever control plane your `flyte` CLI is
-authenticated against, and nothing needs restarting once you log in.
+and report a clean missing-target error when called. It is tenant-agnostic: choose a target
+with `FLYTE_MCP_PROJECT` / `FLYTE_MCP_DOMAIN` or tool arguments, and nothing needs restarting
+once you supply a usable Flyte login and target.
 
 To test it, run `python3 scripts/smoke_test_mcp.py` from the repo root — it spawns the
 server exactly as a client does, lists the tools, and makes one real read-only call.
@@ -117,8 +123,8 @@ the plugin's own `.mcp.json` sets neither, so ambient values apply.
 
 | Variable | Effect |
 |---|---|
-| `FLYTE_MCP_PROJECT` | override the project from the resolved config |
-| `FLYTE_MCP_DOMAIN` | override the domain from the resolved config |
+| `FLYTE_MCP_PROJECT` | set the default project for cluster tools |
+| `FLYTE_MCP_DOMAIN` | set the default domain for cluster tools |
 
 Note there is no per-server toggle for plugin MCP servers in Claude Code — it manages them
 through plugin installation, not `/mcp`. Suppressing one needs a `deniedMcpServers` entry or

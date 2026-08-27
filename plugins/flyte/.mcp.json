@@ -8,12 +8,13 @@
       "command": "uvx",
       "args": [
         "--from",
-        "flyte[mcp]>=2.5.18",
+        "flyte[mcp]==2.6.10",
         "flyte-mcp",
         "--transport",
         "stdio",
         "--tool-groups",
-        "task,run,action,logs,app,trigger,project,secret,condition,identity"
+        "task,run,action,logs,app,trigger,project,secret,condition,identity",
+        "--no-init-from-config"
       ]
     }
   }

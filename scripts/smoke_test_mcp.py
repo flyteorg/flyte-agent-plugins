@@ -21,8 +21,10 @@ The ``.mcp.json`` command deliberately leaves the three ``search`` tools out -- 
 
 import json
 import os
+import select
 import subprocess
 import sys
+import time
 
 _DEFAULT_PLUGIN = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "plugins", "flyte"
@@ -41,7 +43,7 @@ proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
 _id = 0
 
 
-def rpc(method, params=None, notify=False):
+def rpc(method, params=None, notify=False, timeout_s=15):
     global _id
     msg = {"jsonrpc": "2.0", "method": method, "params": params or {}}
     if not notify:
@@ -51,10 +53,29 @@ def rpc(method, params=None, notify=False):
     proc.stdin.flush()
     if notify:
         return None
-    line = proc.stdout.readline()
-    if not line:
-        raise SystemExit("server closed the stream; see stderr below")
-    return json.loads(line)
+
+    deadline = time.monotonic() + timeout_s
+    skipped = []
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            detail = f"; skipped stdout: {' | '.join(skipped[-3:])}" if skipped else ""
+            raise RuntimeError(f"timed out waiting for a JSON-RPC response to {method}{detail}")
+        ready, _, _ = select.select([proc.stdout], [], [], remaining)
+        if not ready:
+            continue
+        line = proc.stdout.readline()
+        if not line:
+            raise RuntimeError("server closed the stream; see stderr below")
+        try:
+            response = json.loads(line)
+        except json.JSONDecodeError:
+            skipped.append(line.strip())
+            continue
+        if response.get("id") == _id:
+            if skipped:
+                print(f"  ignored {len(skipped)} non-protocol stdout line(s) from the server")
+            return response
 
 
 try:
@@ -90,8 +111,12 @@ try:
     if "list_runs" not in names:
         raise SystemExit("list_runs is missing -- the declared --tool-groups did not take effect")
 
-    ok = call("list_runs", {"limit": 3},
-              lambda p: print(f"  OK -> {len(p if isinstance(p, list) else json.loads(p or '[]'))} run(s)"))
+    try:
+        ok = call("list_runs", {"limit": 3},
+                  lambda p: print(f"  OK -> {len(p if isinstance(p, list) else json.loads(p or '[]'))} run(s)"))
+    except RuntimeError as exc:
+        ok = False
+        print(f"  could not complete read-only call: {exc}")
     if not ok:
         print("\nnot connected to a cluster -- the tools are registered but fail when called.")
         print("Log in with the `flyte` CLI (project + domain) and rerun to exercise list_runs.")
