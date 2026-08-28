@@ -178,19 +178,22 @@ machine.
 `uvx` — nothing is vendored here:
 
 ```
-uvx --from "flyte[mcp]>=2.5.18" flyte-mcp --transport stdio \
-  --tool-groups task,run,action,logs,app,trigger,project,secret,condition,identity
+uvx --from "flyte[mcp]==2.6.10" flyte-mcp --transport stdio \
+  --tool-groups task,run,action,logs,app,trigger,project,secret,condition,identity \
+  --no-init-from-config
 ```
 
-`>=2.5.18` is the first release that caps `mcp<2`; below it the server dies at import. The
+`2.6.10` caps `mcp<2`; earlier releases than `2.5.18` can resolve `mcp` 2.0.0 and die at import.
+Pinning the version keeps tool metadata and behavior reproducible for users and reviewers. The
 `search` groups are left out on purpose — `flyte-docs` already serves them hosted, and
 enabling them here shallow-clones ~120 MB into `~/.flyte/mcp` on first launch.
 
-It is tenant-agnostic: config discovery is the SDK's normal one, so it acts on the same
-control plane your `flyte` CLI is authenticated against. **A cluster is optional** — the
-server starts even with no Flyte config at all, so the plugin still works while you are
-deploying your first cluster; the tools are registered either way and simply fail when
-called until you are logged in.
+It is tenant-agnostic. The bundled command uses `--no-init-from-config`, so an
+unconfigured client gets a clean MCP error instead of the server starting an interactive
+login on its JSON-RPC stdout. Set `FLYTE_MCP_PROJECT` and `FLYTE_MCP_DOMAIN` in the MCP
+environment, or have calls supply `project` and `domain`, before using cluster tools.
+**A cluster is optional** — the tools are still registered while you are deploying your
+first cluster, and calls then report the missing target rather than breaking the protocol.
 
 Test it end-to-end — this spawns the server exactly as a client does, handshakes, lists the
 tools, and makes one real read-only call:
@@ -237,23 +240,25 @@ pi uses the same `mcpServers` shape in `~/.pi/agent/mcp.json`.
 
 **`flyte-cluster`** is a local stdio process, but it is just the SDK's published
 `flyte-mcp` entry point run with `uvx` — no checkout, no path, so it is as portable as the
-hosted one. It needs [`uv`](https://docs.astral.sh/uv/) on `PATH` and picks up whatever
-control plane your `flyte` CLI is logged into:
+hosted one. It needs [`uv`](https://docs.astral.sh/uv/) on `PATH`, a usable Flyte login,
+and a project/domain supplied by `FLYTE_MCP_PROJECT` / `FLYTE_MCP_DOMAIN` or the tool call:
 
 ```toml
 # Codex — ~/.codex/config.toml
 [mcp_servers.flyte-cluster]
 command = "uvx"
-args = ["--from", "flyte[mcp]>=2.5.18", "flyte-mcp", "--transport", "stdio",
-        "--tool-groups", "task,run,action,logs,app,trigger,project,secret,condition,identity"]
+args = ["--from", "flyte[mcp]==2.6.10", "flyte-mcp", "--transport", "stdio",
+        "--tool-groups", "task,run,action,logs,app,trigger,project,secret,condition,identity",
+        "--no-init-from-config"]
 ```
 
 ```json
 // opencode — opencode.json
 { "mcp": { "flyte-cluster": { "type": "local", "enabled": true,
-  "command": ["uvx", "--from", "flyte[mcp]>=2.5.18", "flyte-mcp", "--transport", "stdio",
+  "command": ["uvx", "--from", "flyte[mcp]==2.6.10", "flyte-mcp", "--transport", "stdio",
               "--tool-groups",
-              "task,run,action,logs,app,trigger,project,secret,condition,identity"] } } }
+              "task,run,action,logs,app,trigger,project,secret,condition,identity",
+              "--no-init-from-config"] } } }
 ```
 
 ```yaml
@@ -261,8 +266,9 @@ args = ["--from", "flyte[mcp]>=2.5.18", "flyte-mcp", "--transport", "stdio",
 mcp_servers:
   flyte-cluster:
     command: "uvx"
-    args: ["--from", "flyte[mcp]>=2.5.18", "flyte-mcp", "--transport", "stdio",
-           "--tool-groups", "task,run,action,logs,app,trigger,project,secret,condition,identity"]
+    args: ["--from", "flyte[mcp]==2.6.10", "flyte-mcp", "--transport", "stdio",
+           "--tool-groups", "task,run,action,logs,app,trigger,project,secret,condition,identity",
+           "--no-init-from-config"]
 ```
 
 Drop `--tool-groups` to get everything, including the three `search` tools — but then the
