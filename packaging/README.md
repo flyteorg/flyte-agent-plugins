@@ -78,11 +78,9 @@ python packaging/verify.py         # what CI runs: build, install, assert
 
 ## Cutting a release
 
-```bash
-python packaging/set_version.py 0.4.0   # updates all three manifests
-git commit -am "release 0.4.0"
-git tag v0.4.0 && git push origin main --tags
-```
+The step-by-step checklist lives in [`RELEASING.md`](../RELEASING.md). In short:
+`packaging/set_version.py` sets the version, that lands on `main` through a PR,
+and pushing a matching `v*` tag triggers the publish.
 
 `.github/workflows/publish.yml` then:
 
@@ -102,24 +100,11 @@ To rehearse without publishing, run the workflow manually with `dry_run: true`
 
 ## One-time setup
 
-**GitHub environments.** Create an environment named `pypi` (Settings →
-Environments). Add required reviewers there if you want a human gate on
-publishes.
-
-**PyPI trusted publishing.** Configure one publisher per package name at
-<https://pypi.org/manage/account/publishing/>. Because the projects do not exist
-until the first release, add them as *pending publishers*:
-
-| Field | Value |
-|---|---|
-| PyPI project name | `flyte-skills` (then again for `flyte-agent-plugins`) |
-| Owner | `flyteorg` |
-| Repository name | this repo |
-| Workflow name | `publish.yml` |
-| Environment name | `pypi` |
-
+A `pypi` GitHub environment and one PyPI trusted publisher per package name —
+see [First-time setup](../RELEASING.md#first-time-setup) for the exact values.
 No API token is stored anywhere; the workflow's `id-token: write` permission is
-what authenticates. **This is all the setup a release needs today.**
+what authenticates, and PyPI's *pending publishers* let that work for names that
+do not exist yet.
 
 ## Enabling npm
 
