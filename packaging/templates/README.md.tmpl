@@ -1,0 +1,83 @@
+# {{DIST}}
+
+{{DESCRIPTION}}
+
+{{SKILL_COUNT}} [Agent Skills](https://agentskills.io) for [Flyte](https://flyte.org),
+packaged for every agent harness — plus two MCP servers (`flyte-docs`, `flyte-cluster`)
+for harnesses that read the bundled `.mcp.json`.
+
+> `{{DIST}}` and `{{OTHER_DIST}}` are **identical mirrors** published from
+> [the same repo]({{REPO_URL}}) at the same version. Install whichever name you
+> prefer — installing both just gives you two copies of the same skills.
+
+## Install
+
+<!-- npm-only:start -->
+### As a Claude Code plugin (npm source)
+
+Add an entry to your marketplace's `marketplace.json`:
+
+```json
+{
+  "name": "flyte",
+  "source": { "source": "npm", "package": "{{DIST}}", "version": "^{{VERSION}}" }
+}
+```
+
+Claude Code runs `npm install` and reads `.claude-plugin/plugin.json` from the
+package root.
+
+### As a CLI that copies skills into your harness
+
+```bash
+npx {{DIST}} install
+```
+<!-- npm-only:end -->
+<!-- pypi-only:start -->
+```bash
+uvx {{DIST}} install
+```
+
+Or `pip install {{DIST}}` and then `{{DIST}} install`.
+<!-- pypi-only:end -->
+
+The CLI auto-detects which harnesses are set up on the machine and copies the
+skills into each one's skills directory:
+
+| Harness | User-level directory | Project-level (`--project`) |
+|---|---|---|
+| Claude Code | `~/.claude/skills/` | `.claude/skills/` |
+| Codex CLI | `~/.agents/skills/` | `.agents/skills/` |
+| opencode | `~/.config/opencode/skills/` | `.opencode/skills/` |
+| pi | `~/.pi/agent/skills/` | — |
+
+```bash
+{{DIST}} install --target claude --target codex   # pick harnesses explicitly
+{{DIST}} install --dir ./somewhere/skills         # arbitrary directory
+{{DIST}} install --project                        # this repo only
+{{DIST}} install --dry-run                        # show what would change
+{{DIST}} uninstall                                # remove them again
+{{DIST}} list                                     # list bundled skills
+{{DIST}} path                                     # print the bundled plugin root
+```
+
+The MCP servers are **not** installed by the CLI — only the skills are. Harnesses
+that consume the whole plugin (Claude Code, Codex) pick the servers up from
+`.mcp.json` automatically.
+
+## Native install paths
+
+If you'd rather install from git than from a registry, the repo is a plugin
+marketplace in its own right:
+
+```
+/plugin marketplace add flyteorg/flyte-agent-plugins
+/plugin install flyte@flyte-agent-plugins
+```
+
+See [the repository README]({{REPO_URL}}#readme) for Codex, Hermes, opencode, and
+pi instructions, the full skill list, and MCP server details.
+
+## License
+
+Apache-2.0

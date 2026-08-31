@@ -34,10 +34,46 @@ To switch to a different version later, remove and re-add the marketplace:
 /plugin marketplace add https://github.com/flyteorg/flyte-agent-plugins.git#<other-ref>
 ```
 
+### Install from PyPI
+
+The skills are published to PyPI under two interchangeable names, `flyte-skills`
+and `flyte-agent-plugins`. Pick either — they are identical mirrors of the same
+release.
+
+```bash
+uvx flyte-skills install
+```
+
+Or `pip install flyte-skills` and then `flyte-skills install`.
+
+The CLI detects which harnesses are set up on the machine and copies the skills
+into each one's skills directory:
+
+| Harness | User-level directory | Project-level (`--project`) |
+|---|---|---|
+| Claude Code | `~/.claude/skills/` | `.claude/skills/` |
+| Codex CLI | `~/.agents/skills/` | `.agents/skills/` |
+| opencode | `~/.config/opencode/skills/` | `.opencode/skills/` |
+| pi | `~/.pi/agent/skills/` | — |
+
+Use `--target` to choose harnesses explicitly, `--dir` for an arbitrary
+directory, `--project` for this repo only, `--dry-run` to preview, and
+`uninstall` to reverse it. It installs the **skills only** — not the MCP servers,
+which Claude Code and Codex pick up from the plugin instead.
+
+See [`packaging/README.md`](packaging/README.md) for how the packages are built
+and released. Equivalent npm packages are built and validated in CI but not
+published yet.
+
 ## Install with other agent harnesses
 
 The skills are plain [Agent Skills](https://agentskills.io) (`SKILL.md` + YAML
 frontmatter), so they work in any harness that supports the standard.
+
+Each harness has a native install below. [`uvx flyte-skills install`](#install-from-pypi)
+is usually the shorter path for four of the five — it writes the skills straight into
+whichever harness directories it finds — but it installs **skills only**, so use the
+Claude Code or Codex path if you want the MCP servers too.
 
 > **Only Claude Code and Codex get the MCP servers automatically.** They are declared in
 > `plugins/flyte/.mcp.json` — Claude Code reads that file by convention, Codex is pointed at
@@ -45,13 +81,13 @@ frontmatter), so they work in any harness that supports the standard.
 > still wire the servers up by hand in a few lines, see
 > [Adding the MCP servers elsewhere](#adding-the-mcp-servers-elsewhere).
 
-| Harness | Skills | MCP servers |
-|---|---|---|
-| Claude Code | all 21 | both, automatically |
-| Codex CLI | all 21 | both, automatically |
-| Hermes | per-skill | none — add manually |
-| opencode | all 21 | none — add manually |
-| pi | all 21 | none — add manually |
+| Harness | Skills | MCP servers | `flyte-skills install` |
+|---|---|---|---|
+| Claude Code | all 21 | both, automatically | `--target claude` |
+| Codex CLI | all 21 | both, automatically | `--target codex` |
+| Hermes | per-skill | none — add manually | not a target — use `hermes` |
+| opencode | all 21 | none — add manually | `--target opencode` |
+| pi | all 21 | none — add manually | `--target pi` |
 
 ### OpenAI Codex CLI
 
@@ -70,6 +106,11 @@ the `mcp_servers` the Codex docs show — the manifest struct is `camelCase`,
 [openai/codex#22105](https://github.com/openai/codex/issues/22105).) Neither server needs a
 path expanded, so `${CLAUDE_PLUGIN_ROOT}` — which Codex does not expand,
 [openai/codex#22842](https://github.com/openai/codex/issues/22842) — never comes up.
+
+`uvx flyte-skills install --target codex` also works, writing the skills to
+`~/.agents/skills/` (the location Codex reads for user-level skills). It gets you the
+skills without a marketplace, but **not** the MCP servers — prefer the command above
+unless you only want the skills.
 
 ### Hermes
 
@@ -96,7 +137,9 @@ npx skills add flyteorg/flyte-agent-plugins          # interactive skill + agent
 npx skills add flyteorg/flyte-agent-plugins@<ref>    # pin a tag/branch/commit
 ```
 
-Or copy a skill folder directly, e.g.
+Or install all 21 non-interactively with
+`uvx flyte-skills install --target opencode` (writes to `~/.config/opencode/skills/`;
+add `--project` for `.opencode/skills/`), or copy a single skill folder directly, e.g.
 `cp -r plugins/flyte/skills/flyte-deploy-aws ~/.config/opencode/skills/`.
 
 ### pi
@@ -108,8 +151,8 @@ pi install https://github.com/flyteorg/flyte-agent-plugins           # default b
 pi install git:github.com/flyteorg/flyte-agent-plugins@<tag>         # pinned to a tag/commit
 ```
 
-(Alternatively, clone the repo into `~/.pi/agent/skills/` — pi discovers nested
-`SKILL.md` folders recursively.)
+(Alternatively, `uvx flyte-skills install --target pi`, or clone the repo into
+`~/.pi/agent/skills/` — pi discovers nested `SKILL.md` folders recursively.)
 
 ## Skills
 
@@ -286,6 +329,8 @@ plugins/flyte/.claude-plugin/plugin.json    # Claude Code plugin manifest
 plugins/flyte/.codex-plugin/plugin.json     # Codex plugin manifest (points at .mcp.json)
 plugins/flyte/.mcp.json                     # the two bundled MCP servers
 plugins/flyte/skills/<skill>/SKILL.md
+packaging/build.py                          # fans plugins/flyte out into the npm + PyPI packages
+packaging/verify.py                         # builds every distribution and proves it installs
 scripts/smoke_test_mcp.py                   # end-to-end check of the local MCP server
 ```
 
@@ -304,3 +349,8 @@ It is picked up automatically by the `flyte` plugin, the Codex manifest, and the
 `pi.skills` entry — no marketplace edit needed. Add a row to the skills table above. Keep
 everything generic — no account IDs, hostnames, credentials, or other environment-specific
 values.
+
+The published npm and PyPI packages are generated from `plugins/flyte/`, so a new skill
+ships with the next release automatically. Run `python packaging/verify.py` to check it
+packages and installs cleanly; see [`packaging/README.md`](packaging/README.md) for the
+release process.
