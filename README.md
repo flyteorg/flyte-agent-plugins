@@ -70,19 +70,24 @@ published yet.
 The skills are plain [Agent Skills](https://agentskills.io) (`SKILL.md` + YAML
 frontmatter), so they work in any harness that supports the standard.
 
+Each harness has a native install below. [`uvx flyte-skills install`](#install-from-pypi)
+is usually the shorter path for four of the five — it writes the skills straight into
+whichever harness directories it finds — but it installs **skills only**, so use the
+Claude Code or Codex path if you want the MCP servers too.
+
 > **Only Claude Code and Codex get the MCP servers automatically.** They are declared in
 > `plugins/flyte/.mcp.json` — Claude Code reads that file by convention, Codex is pointed at
 > it by `.codex-plugin/plugin.json`. The other harnesses install the **skills only**; you can
 > still wire the servers up by hand in a few lines, see
 > [Adding the MCP servers elsewhere](#adding-the-mcp-servers-elsewhere).
 
-| Harness | Skills | MCP servers |
-|---|---|---|
-| Claude Code | all 21 | both, automatically |
-| Codex CLI | all 21 | both, automatically |
-| Hermes | per-skill | none — add manually |
-| opencode | all 21 | none — add manually |
-| pi | all 21 | none — add manually |
+| Harness | Skills | MCP servers | `flyte-skills install` |
+|---|---|---|---|
+| Claude Code | all 21 | both, automatically | `--target claude` |
+| Codex CLI | all 21 | both, automatically | `--target codex` |
+| Hermes | per-skill | none — add manually | not a target — use `hermes` |
+| opencode | all 21 | none — add manually | `--target opencode` |
+| pi | all 21 | none — add manually | `--target pi` |
 
 ### OpenAI Codex CLI
 
@@ -101,6 +106,11 @@ the `mcp_servers` the Codex docs show — the manifest struct is `camelCase`,
 [openai/codex#22105](https://github.com/openai/codex/issues/22105).) Neither server needs a
 path expanded, so `${CLAUDE_PLUGIN_ROOT}` — which Codex does not expand,
 [openai/codex#22842](https://github.com/openai/codex/issues/22842) — never comes up.
+
+`uvx flyte-skills install --target codex` also works, writing the skills to
+`~/.agents/skills/` (the location Codex reads for user-level skills). It gets you the
+skills without a marketplace, but **not** the MCP servers — prefer the command above
+unless you only want the skills.
 
 ### Hermes
 
@@ -127,7 +137,9 @@ npx skills add flyteorg/flyte-agent-plugins          # interactive skill + agent
 npx skills add flyteorg/flyte-agent-plugins@<ref>    # pin a tag/branch/commit
 ```
 
-Or copy a skill folder directly, e.g.
+Or install all 21 non-interactively with
+`uvx flyte-skills install --target opencode` (writes to `~/.config/opencode/skills/`;
+add `--project` for `.opencode/skills/`), or copy a single skill folder directly, e.g.
 `cp -r plugins/flyte/skills/flyte-deploy-aws ~/.config/opencode/skills/`.
 
 ### pi
@@ -139,8 +151,8 @@ pi install https://github.com/flyteorg/flyte-agent-plugins           # default b
 pi install git:github.com/flyteorg/flyte-agent-plugins@<tag>         # pinned to a tag/commit
 ```
 
-(Alternatively, clone the repo into `~/.pi/agent/skills/` — pi discovers nested
-`SKILL.md` folders recursively.)
+(Alternatively, `uvx flyte-skills install --target pi`, or clone the repo into
+`~/.pi/agent/skills/` — pi discovers nested `SKILL.md` folders recursively.)
 
 ## Skills
 
