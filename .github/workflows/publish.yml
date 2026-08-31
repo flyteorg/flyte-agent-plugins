@@ -1,0 +1,192 @@
+name: publish
+
+# Publishes the skills to PyPI from one source of truth (plugins/flyte):
+#   PyPI: flyte-skills, flyte-agent-plugins
+# The two names are identical mirrors, so each registry's download counter
+# reports real installs of that name instead of a redirect.
+#
+# npm publishing is DISABLED for now (see the `npm` job) while distribution
+# focuses on pip/uvx. The npm packages are still built, packed, and validated on
+# every run so they stay releasable the moment that changes.
+#
+# Release: `python packaging/set_version.py X.Y.Z`, commit, then push tag vX.Y.Z.
+# The build job refuses to continue unless the tag matches the plugin manifest.
+#
+# One-time setup (see packaging/README.md):
+#   - a GitHub environment named `pypi`
+#   - a PyPI trusted publisher for EACH package name, pointing at this workflow
+#     file and the `pypi` environment (use a pending publisher before the first
+#     release, since the projects don't exist yet)
+# No npm credentials are needed while the `npm` job is disabled.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and validate only — do not publish"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: python -m pip install --upgrade build twine
+
+      - id: version
+        name: Read the version from the plugin manifest
+        run: |
+          VERSION=$(python packaging/build.py --print-version)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "building $VERSION"
+
+      # A tag that disagrees with the manifest would publish a version nobody
+      # can trace back to a commit, so fail loudly instead.
+      - name: Tag must match the manifest version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION="${{ steps.version.outputs.version }}"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match manifest version $VERSION. Run packaging/set_version.py $TAG and re-tag."
+            exit 1
+          fi
+
+      - name: Verify every distribution builds and installs
+        run: python packaging/verify.py
+
+      - name: Build the release artifacts
+        run: |
+          set -euo pipefail
+          python packaging/build.py --outdir build
+          mkdir -p release-assets
+          for dist in flyte-skills flyte-agent-plugins; do
+            npm pack "./build/npm/$dist" --pack-destination release-assets
+            (cd "build/pypi/$dist" && python -m build)
+            mkdir -p "pypi-dists/$dist"
+            cp "build/pypi/$dist"/dist/* "pypi-dists/$dist/"
+            cp "build/pypi/$dist"/dist/* release-assets/
+          done
+          twine check pypi-dists/*/*
+
+      # `npm publish --dry-run` runs the same validation as a real publish
+      # (name, version, file list) without pushing anything to the registry.
+      - name: npm publish --dry-run
+        run: |
+          for dist in flyte-skills flyte-agent-plugins; do
+            npm publish "./build/npm/$dist" --dry-run --access public
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-flyte-skills
+          path: build/npm/flyte-skills
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-flyte-agent-plugins
+          path: build/npm/flyte-agent-plugins
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pypi-flyte-skills
+          path: pypi-dists/flyte-skills
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pypi-flyte-agent-plugins
+          path: pypi-dists/flyte-agent-plugins
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets
+
+  pypi:
+    needs: build
+    if: github.event_name == 'push' || inputs.dry_run == false
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # PyPI trusted publishing — no API token needed
+    strategy:
+      fail-fast: false
+      matrix:
+        dist: [flyte-skills, flyte-agent-plugins]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pypi-${{ matrix.dist }}
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Re-running a release tag should be a no-op, not a hard failure.
+          skip-existing: true
+
+  # DISABLED: npm publishing is off while distribution focuses on pip/uvx.
+  # To re-enable: restore the `if:` below to
+  #   github.event_name == 'push' || inputs.dry_run == false
+  # add `npm` back to the `release` job's `needs`, create the `npm` environment
+  # and its NPM_TOKEN secret, then bump node-version if you switch to OIDC.
+  # See packaging/README.md. The build job keeps packing and validating the npm
+  # packages regardless, so nothing rots while this is off.
+  npm:
+    needs: build
+    if: false
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # npm provenance attestation
+    strategy:
+      fail-fast: false
+      matrix:
+        dist: [flyte-skills, flyte-agent-plugins]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-${{ matrix.dist }}
+          path: pkg
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      # upload-artifact does not carry the executable bit; npm needs the bin
+      # entry executable in the tarball it builds from this directory.
+      - run: chmod +x pkg/bin/cli.mjs
+      - name: npm publish
+        run: npm publish ./pkg --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  release:
+    needs: [pypi]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Attach the published artifacts to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --generate-notes --title "$GITHUB_REF_NAME" release-assets/* \
+            || gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber

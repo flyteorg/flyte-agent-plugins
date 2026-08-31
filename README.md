@@ -34,6 +34,37 @@ To switch to a different version later, remove and re-add the marketplace:
 /plugin marketplace add https://github.com/flyteorg/flyte-agent-plugins.git#<other-ref>
 ```
 
+### Install from PyPI
+
+The skills are published to PyPI under two interchangeable names, `flyte-skills`
+and `flyte-agent-plugins`. Pick either — they are identical mirrors of the same
+release.
+
+```bash
+uvx flyte-skills install
+```
+
+Or `pip install flyte-skills` and then `flyte-skills install`.
+
+The CLI detects which harnesses are set up on the machine and copies the skills
+into each one's skills directory:
+
+| Harness | User-level directory | Project-level (`--project`) |
+|---|---|---|
+| Claude Code | `~/.claude/skills/` | `.claude/skills/` |
+| Codex CLI | `~/.agents/skills/` | `.agents/skills/` |
+| opencode | `~/.config/opencode/skills/` | `.opencode/skills/` |
+| pi | `~/.pi/agent/skills/` | — |
+
+Use `--target` to choose harnesses explicitly, `--dir` for an arbitrary
+directory, `--project` for this repo only, `--dry-run` to preview, and
+`uninstall` to reverse it. It installs the **skills only** — not the MCP servers,
+which Claude Code and Codex pick up from the plugin instead.
+
+See [`packaging/README.md`](packaging/README.md) for how the packages are built
+and released. Equivalent npm packages are built and validated in CI but not
+published yet.
+
 ## Install with other agent harnesses
 
 The skills are plain [Agent Skills](https://agentskills.io) (`SKILL.md` + YAML
@@ -286,6 +317,8 @@ plugins/flyte/.claude-plugin/plugin.json    # Claude Code plugin manifest
 plugins/flyte/.codex-plugin/plugin.json     # Codex plugin manifest (points at .mcp.json)
 plugins/flyte/.mcp.json                     # the two bundled MCP servers
 plugins/flyte/skills/<skill>/SKILL.md
+packaging/build.py                          # fans plugins/flyte out into the npm + PyPI packages
+packaging/verify.py                         # builds every distribution and proves it installs
 scripts/smoke_test_mcp.py                   # end-to-end check of the local MCP server
 ```
 
@@ -304,3 +337,8 @@ It is picked up automatically by the `flyte` plugin, the Codex manifest, and the
 `pi.skills` entry — no marketplace edit needed. Add a row to the skills table above. Keep
 everything generic — no account IDs, hostnames, credentials, or other environment-specific
 values.
+
+The published npm and PyPI packages are generated from `plugins/flyte/`, so a new skill
+ships with the next release automatically. Run `python packaging/verify.py` to check it
+packages and installs cleanly; see [`packaging/README.md`](packaging/README.md) for the
+release process.

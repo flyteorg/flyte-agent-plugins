@@ -3,7 +3,10 @@
   "version": "0.3.0",
   "description": "Agent skills for working with Flyte.",
   "license": "Apache-2.0",
-  "keywords": ["pi-package"],
+  "private": true,
+  "keywords": [
+    "pi-package"
+  ],
   "pi": {
     "skills": [
       "./plugins/flyte/skills"
