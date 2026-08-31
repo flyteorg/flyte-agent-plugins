@@ -350,7 +350,7 @@ It is picked up automatically by the `flyte` plugin, the Codex manifest, and the
 everything generic — no account IDs, hostnames, credentials, or other environment-specific
 values.
 
-The published npm and PyPI packages are generated from `plugins/flyte/`, so a new skill
-ships with the next release automatically. Run `python packaging/verify.py` to check it
-packages and installs cleanly; see [`packaging/README.md`](packaging/README.md) for the
-release process.
+The published PyPI packages are generated from `plugins/flyte/`, so a new skill ships
+with the next release automatically. Run `python packaging/verify.py` to check it packages
+and installs cleanly. To cut a release, follow [`RELEASING.md`](RELEASING.md); for how the
+packages are built, see [`packaging/README.md`](packaging/README.md).
