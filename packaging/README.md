@@ -2,22 +2,30 @@
 
 The skills in `plugins/flyte/` are published from this one source of truth:
 
-| Registry | Package | Install | Status |
-|---|---|---|---|
-| PyPI | [`flyte-skills`](https://pypi.org/project/flyte-skills/) | `uvx flyte-skills install` | published |
-| PyPI | [`flyte-agent-plugins`](https://pypi.org/project/flyte-agent-plugins/) | `uvx flyte-agent-plugins install` | published |
-| npm | `flyte-skills` | `npx flyte-skills install` | **built, not published** |
-| npm | `flyte-agent-plugins` | `npx flyte-agent-plugins install` | **built, not published** |
+| Registry | Package | Skills | `mcp` subcommand | Status |
+|---|---|---|---|---|
+| PyPI | [`flyte-agent-plugins`](https://pypi.org/project/flyte-agent-plugins/) | all 21 | yes | published |
+| PyPI | [`flyte-skills`](https://pypi.org/project/flyte-skills/) | all 21 | no | published |
+| npm | `flyte-agent-plugins` | all 21 | yes | **built, not published** |
+| npm | `flyte-skills` | all 21 | no | **built, not published** |
 
 **npm publishing is currently disabled** while distribution focuses on pip/uvx.
 The npm packages are still generated, packed, and validated on every CI run, so
 turning them on later is a one-line change to `publish.yml` — see
 [Enabling npm](#enabling-npm).
 
-The two names are **identical mirrors**, not an alias plus a shim. Each carries
-the full payload, so each registry's download counter reports real installs of
-that name rather than a redirect — and both names stay reserved against
-squatting on Flyte-adjacent packages.
+Both carry the full skill payload — neither is an alias or a shim — so each
+registry's download counter reports real installs of that name rather than a
+redirect, and both names stay reserved against squatting on Flyte-adjacent
+packages.
+
+They differ in one thing: **only `flyte-agent-plugins` ships the `mcp`
+subcommand**, so each name means what it says — `flyte-skills` is skills and
+nothing else, `flyte-agent-plugins` is the whole plugin. `build.py` writes the
+flag (`_features.py` for PyPI, `bin/features.json` for npm) and both CLIs read
+it; `flyte-skills` hides `mcp` from `--help` and, if invoked anyway, points at
+the other package rather than emitting a bare parser error. That also turns the
+two download counters into two questions instead of one asked twice.
 
 ## Why registries at all
 
@@ -147,12 +155,12 @@ through a counter:
 ```json
 {
   "name": "flyte",
-  "source": { "source": "npm", "package": "flyte-skills", "version": "^0.3.0" }
+  "source": { "source": "npm", "package": "flyte-agent-plugins", "version": "^0.3.0" }
 }
 ```
 
 There is no `pip` plugin source type. The PyPI package instead ships an
-installer CLI, and `flyte-skills emit-plugin` satisfies the `command` source
+installer CLI, and `flyte-agent-plugins emit-plugin` satisfies the `command` source
 contract (print one absolute path to the plugin directory, exit 0):
 
 ```json
@@ -160,7 +168,7 @@ contract (print one absolute path to the plugin directory, exit 0):
   "name": "flyte",
   "source": {
     "source": "command",
-    "command": "uvx --from flyte-skills flyte-skills emit-plugin",
+    "command": "uvx --from flyte-agent-plugins flyte-agent-plugins emit-plugin",
     "timeout": 120,
     "mode": "copy"
   }

@@ -19,6 +19,7 @@ Requires: node/npm, and either `uv` or `python -m build`.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -75,6 +76,56 @@ def check_targets(workdir: Path, npm_pkg: Path, py_exe: str) -> None:
         node_targets == py_targets and len(py_targets) > 1,
         f"both CLIs declare the same targets: {sorted(py_targets)}",
     )
+
+
+def check_mcp(dist: str, npm_pkg: Path, py_exe: str) -> None:
+    """The `mcp` subcommand builds `claude`/`codex` command lines that reconfigure
+    a user's harness, so the two implementations must agree exactly.
+
+    Only `flyte-agent-plugins` ships it; `flyte-skills` must refuse with a pointer
+    rather than a bare argparse error.
+    """
+    print(f"mcp ({dist})")
+    node_cli = str(npm_pkg / "bin" / "cli.mjs")
+    declared = set(json.loads((builder.PLUGIN_SRC / ".mcp.json").read_text())["mcpServers"])
+
+    if not builder.has_mcp(dist):
+        for label, argv in (("python", [py_exe]), ("node", ["node", node_cli])):
+            r = run([*argv, "mcp", "list"], check=False)
+            check(
+                r.returncode == 2 and "flyte-agent-plugins" in r.stderr,
+                f"{label}: `mcp` is refused with a pointer to flyte-agent-plugins",
+            )
+            check("mcp" not in run([*argv, "--help"], check=False).stdout,
+                  f"{label}: `mcp` is absent from --help")
+        return
+
+    listed = run([py_exe, "mcp", "list"]).stdout
+    names = {line.split("\t")[0] for line in listed.strip().splitlines() if line.strip()}
+    check(names == declared, f"`mcp list` reports the bundled servers: {sorted(names)}")
+
+    # Both CLIs skip a harness whose binary is absent, and neither `claude` nor
+    # `codex` exists on a CI runner -- without stubs every comparison below would
+    # be empty-vs-empty and prove nothing. These are never executed: --dry-run
+    # prints the command lines instead of running them.
+    stub_dir = npm_pkg.parent / "stub-bin"
+    stub_dir.mkdir(exist_ok=True)
+    for binary in ("claude", "codex"):
+        stub = stub_dir / binary
+        stub.write_text("#!/bin/sh\nexit 0\n")
+        stub.chmod(0o755)
+    env = {**os.environ, "PATH": f"{stub_dir}{os.pathsep}{os.environ['PATH']}"}
+
+    for label, argv in (
+        ("list", ["mcp", "list"]),
+        ("install --target claude", ["mcp", "install", "--target", "claude", "--dry-run"]),
+        ("install --target codex", ["mcp", "install", "--target", "codex", "--dry-run"]),
+        ("install (auto-detect)", ["mcp", "install", "--dry-run"]),
+        ("uninstall", ["mcp", "uninstall", "--target", "claude", "--dry-run"]),
+    ):
+        py = run([py_exe, *argv], check=False, env=env).stdout
+        node = run(["node", node_cli, *argv], check=False, env=env).stdout
+        check(py == node and py.strip() != "", f"both CLIs emit identical `{label}`")
 
 
 def check_skills() -> None:
@@ -161,6 +212,7 @@ def check_pypi(dist: str, pkg: Path, workdir: Path) -> None:
         "`emit-plugin` prints exactly one absolute path",
     )
     check_targets(workdir, workdir / "build" / "npm" / dist, exe)
+    check_mcp(dist, workdir / "build" / "npm" / dist, exe)
 
 
 def main() -> int:

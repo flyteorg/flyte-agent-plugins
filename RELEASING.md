@@ -1,9 +1,10 @@
 # Releasing
 
-How to publish a new version of `flyte-skills` and `flyte-agent-plugins` to PyPI.
+How to publish a new version of `flyte-agent-plugins` and `flyte-skills` to PyPI.
 
-Both names are published from the same tag as identical mirrors, so there is one
-release, not two. The version comes from
+Both names are published from the same tag and the same source, so there is one
+release, not two. They carry the same 21 skills; only `flyte-agent-plugins`
+ships the `mcp` subcommand. The version comes from
 `plugins/flyte/.claude-plugin/plugin.json` and the tag must match it — CI refuses
 to publish otherwise.
 
@@ -13,20 +14,20 @@ npm publishing is currently disabled; that document explains how to turn it on.
 ## First-time setup
 
 Needed once per repository, not once per release. Skip if
-<https://pypi.org/project/flyte-skills/> already exists.
+<https://pypi.org/project/flyte-agent-plugins/> already exists.
 
 - [ ] Create a GitHub environment named `pypi` (**Settings → Environments**). Add
       required reviewers if you want a human gate before each publish.
-- [ ] Add a PyPI trusted publisher for `flyte-skills` at
+- [ ] Add a PyPI trusted publisher for `flyte-agent-plugins` at
       <https://pypi.org/manage/account/publishing/>, using the settings below.
       Before the first release the project does not exist yet, so add it under
       **pending publishers**.
 - [ ] Add a second publisher, identical except for the project name, for
-      `flyte-agent-plugins`. One publisher is needed per package name.
+      `flyte-skills`. One publisher is needed per package name.
 
 | Field | Value |
 |---|---|
-| PyPI project name | `flyte-skills`, then `flyte-agent-plugins` |
+| PyPI project name | `flyte-agent-plugins`, then `flyte-skills` |
 | Owner | `flyteorg` |
 | Repository name | `flyte-agent-plugins` |
 | Workflow name | `publish.yml` |
@@ -48,7 +49,7 @@ its `id-token: write` permission.
       re-uploaded, even after a yank:
 
       ```bash
-      curl -s -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/flyte-skills/0.4.0/json
+      curl -s -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/flyte-agent-plugins/0.4.0/json
       # 404 = free to use, 200 = already published, pick the next one
       ```
 
@@ -110,8 +111,8 @@ its `id-token: write` permission.
       gh run watch "$(gh run list --workflow=publish.yml --limit=1 --json databaseId --jq '.[0].databaseId')"
       ```
 
-      It builds and verifies, then publishes `flyte-skills` and
-      `flyte-agent-plugins` as separate matrix jobs, then attaches the artifacts
+      It builds and verifies, then publishes `flyte-agent-plugins` and
+      `flyte-skills` as separate matrix jobs, then attaches the artifacts
       to a GitHub release. The two names publish independently, so one failing
       does not block the other.
 
@@ -120,7 +121,7 @@ its `id-token: write` permission.
 - [ ] Both projects show the new version:
 
       ```bash
-      for p in flyte-skills flyte-agent-plugins; do
+      for p in flyte-agent-plugins flyte-skills; do
         echo "$p $(curl -s https://pypi.org/pypi/$p/json | python3 -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])')"
       done
       ```
@@ -128,8 +129,8 @@ its `id-token: write` permission.
 - [ ] A real install works end to end, from a clean cache:
 
       ```bash
-      uvx --refresh --from flyte-skills==0.4.0 flyte-skills list   # expect 21 skills
-      uvx --refresh --from flyte-skills==0.4.0 flyte-skills install --dry-run
+      uvx --refresh --from flyte-agent-plugins==0.4.0 flyte-agent-plugins list   # expect 21 skills
+      uvx --refresh --from flyte-agent-plugins==0.4.0 flyte-agent-plugins install --dry-run
       ```
 
 - [ ] The GitHub release exists and carries the sdists, wheels, and npm
@@ -160,5 +161,5 @@ packages, then stops before any upload.
       source in `.claude-plugin/marketplace.json` tracks the default branch and
       needs no change; only an explicit `version` pin would.
 - [ ] Adoption numbers show up within about a day at
-      <https://pypistats.org/packages/flyte-skills>. Note PyPI counts downloads,
+      <https://pypistats.org/packages/flyte-agent-plugins>. Note PyPI counts downloads,
       not people — CI re-installs and mirrors are in there too.
