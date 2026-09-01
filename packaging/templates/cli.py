@@ -18,6 +18,11 @@ from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 
+try:  # written by packaging/build.py; absent only when running from a checkout
+    from ._features import MCP as HAS_MCP
+except ImportError:  # pragma: no cover
+    HAS_MCP = True
+
 __all__ = ["main", "mcp_servers", "plugin_root", "resolve_target", "TARGETS"]
 
 
@@ -427,6 +432,9 @@ def build_parser(prog: str) -> argparse.ArgumentParser:
     p = sub.add_parser("version", help="Print the plugin version.")
     p.set_defaults(func=cmd_version)
 
+    if not HAS_MCP:
+        return parser
+
     mcp = sub.add_parser("mcp", help="Manage the bundled MCP servers.")
     mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)
 
@@ -471,7 +479,18 @@ def build_parser(prog: str) -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser(Path(sys.argv[0]).name or "flyte-skills").parse_args(argv)
+    prog = Path(sys.argv[0]).name or "flyte-agent-plugins"
+    # A bare "invalid choice: 'mcp'" would not tell you the subcommand exists
+    # under the other distribution, which is the only thing worth knowing here.
+    if not HAS_MCP and (argv if argv is not None else sys.argv[1:])[:1] == ["mcp"]:
+        print(
+            f"`{prog}` installs skills only; the `mcp` subcommand ships with the "
+            "flyte-agent-plugins distribution.\n\n"
+            "    uvx --from flyte-agent-plugins flyte-agent-plugins mcp install\n",
+            file=sys.stderr,
+        )
+        return 2
+    args = build_parser(prog).parse_args(argv)
     return args.func(args)
 
 

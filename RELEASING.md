@@ -2,8 +2,9 @@
 
 How to publish a new version of `flyte-agent-plugins` and `flyte-skills` to PyPI.
 
-Both names are published from the same tag as identical mirrors, so there is one
-release, not two. The version comes from
+Both names are published from the same tag and the same source, so there is one
+release, not two. They carry the same 21 skills; only `flyte-agent-plugins`
+ships the `mcp` subcommand. The version comes from
 `plugins/flyte/.claude-plugin/plugin.json` and the tag must match it — CI refuses
 to publish otherwise.
 

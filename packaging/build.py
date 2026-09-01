@@ -34,7 +34,17 @@ REPO_URL = (
     if os.environ.get("GITHUB_SERVER_URL") and os.environ.get("GITHUB_REPOSITORY")
     else "https://github.com/flyteorg/flyte-agent-plugins"
 )
-DISTS = ["flyte-skills", "flyte-agent-plugins"]
+
+# The two distributions carry the same skills, but only `flyte-agent-plugins`
+# ships the `mcp` subcommand, so each name means what it says: `flyte-skills` is
+# skills and nothing else, `flyte-agent-plugins` is the whole plugin. This also
+# splits the download counters into two questions rather than one asked twice.
+DISTS = ["flyte-agent-plugins", "flyte-skills"]
+MCP_DISTS = {"flyte-agent-plugins"}
+
+
+def has_mcp(dist: str) -> bool:
+    return dist in MCP_DISTS
 
 KEYWORDS = [
     "flyte",
@@ -61,18 +71,22 @@ def module_name(dist: str) -> str:
     return dist.replace("-", "_")
 
 
-def strip_blocks(text: str, registry: str) -> str:
-    """Drop the ``<!-- <other>-only:start -->`` sections from the README template.
+# Tags a README template block can be gated on: the registry it is built for,
+# and whether this distribution ships the MCP subcommand.
+BLOCK_TAGS = ("npm", "pypi", "mcp")
 
-    The two registries share one template but not one install story, so each
-    package's README carries only the instructions that actually work for it.
+
+def strip_blocks(text: str, active: set[str]) -> str:
+    """Keep ``<!-- <tag>-only:start -->`` sections whose tag is active, drop the rest.
+
+    One template, several products: each package's README should carry only the
+    instructions that actually work for it.
     """
-    for other in ("npm", "pypi"):
-        if other == registry:
-            text = text.replace(f"<!-- {other}-only:start -->\n", "")
-            text = text.replace(f"<!-- {other}-only:end -->\n", "")
+    for tag in BLOCK_TAGS:
+        start, end = f"<!-- {tag}-only:start -->\n", f"<!-- {tag}-only:end -->\n"
+        if tag in active:
+            text = text.replace(start, "").replace(end, "")
             continue
-        start, end = f"<!-- {other}-only:start -->\n", f"<!-- {other}-only:end -->\n"
         while start in text:
             head, _, rest = text.partition(start)
             _, _, tail = rest.partition(end)
@@ -81,7 +95,8 @@ def strip_blocks(text: str, registry: str) -> str:
 
 
 def render_readme(dist: str, ver: str, registry: str) -> str:
-    tmpl = strip_blocks((TEMPLATES / "README.md.tmpl").read_text(), registry)
+    active = {registry} | ({"mcp"} if has_mcp(dist) else set())
+    tmpl = strip_blocks((TEMPLATES / "README.md.tmpl").read_text(), active)
     other = [d for d in DISTS if d != dist][0]
     return (
         tmpl.replace("{{DIST}}", dist)
@@ -118,6 +133,9 @@ def build_npm(dist: str, ver: str, outdir: Path) -> Path:
     (pkg / "bin").mkdir()
     shutil.copy2(TEMPLATES / "cli.mjs", pkg / "bin" / "cli.mjs")
     (pkg / "bin" / "cli.mjs").chmod(0o755)
+    (pkg / "bin" / "features.json").write_text(
+        json.dumps({"mcp": has_mcp(dist)}) + "\n"
+    )
 
     shutil.copy2(REPO / "LICENSE", pkg / "LICENSE")
     (pkg / "README.md").write_text(render_readme(dist, ver, "npm"))
@@ -141,6 +159,7 @@ def build_npm(dist: str, ver: str, outdir: Path) -> Path:
             ".mcp.json",
             "skills/",
             "bin/",
+
             "README.md",
             "LICENSE",
         ],
@@ -163,6 +182,10 @@ def build_pypi(dist: str, ver: str, outdir: Path) -> Path:
 
     copy_plugin(src / "plugin")
     shutil.copy2(TEMPLATES / "cli.py", src / "cli.py")
+    (src / "_features.py").write_text(
+        '"""Build-time feature flags; written by packaging/build.py."""\n\n'
+        f"MCP = {has_mcp(dist)}\n"
+    )
     (src / "__init__.py").write_text(
         f'"""Flyte agent skills, installable into any agent harness."""\n\n'
         f'__version__ = "{ver}"\n\n'

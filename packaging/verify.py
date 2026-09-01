@@ -78,12 +78,27 @@ def check_targets(workdir: Path, npm_pkg: Path, py_exe: str) -> None:
     )
 
 
-def check_mcp(npm_pkg: Path, py_exe: str) -> None:
+def check_mcp(dist: str, npm_pkg: Path, py_exe: str) -> None:
     """The `mcp` subcommand builds `claude`/`codex` command lines that reconfigure
-    a user's harness, so the two implementations must agree exactly."""
-    print("mcp")
+    a user's harness, so the two implementations must agree exactly.
+
+    Only `flyte-agent-plugins` ships it; `flyte-skills` must refuse with a pointer
+    rather than a bare argparse error.
+    """
+    print(f"mcp ({dist})")
     node_cli = str(npm_pkg / "bin" / "cli.mjs")
     declared = set(json.loads((builder.PLUGIN_SRC / ".mcp.json").read_text())["mcpServers"])
+
+    if not builder.has_mcp(dist):
+        for label, argv in (("python", [py_exe]), ("node", ["node", node_cli])):
+            r = run([*argv, "mcp", "list"], check=False)
+            check(
+                r.returncode == 2 and "flyte-agent-plugins" in r.stderr,
+                f"{label}: `mcp` is refused with a pointer to flyte-agent-plugins",
+            )
+            check("mcp" not in run([*argv, "--help"], check=False).stdout,
+                  f"{label}: `mcp` is absent from --help")
+        return
 
     listed = run([py_exe, "mcp", "list"]).stdout
     names = {line.split("\t")[0] for line in listed.strip().splitlines() if line.strip()}
@@ -197,7 +212,7 @@ def check_pypi(dist: str, pkg: Path, workdir: Path) -> None:
         "`emit-plugin` prints exactly one absolute path",
     )
     check_targets(workdir, workdir / "build" / "npm" / dist, exe)
-    check_mcp(workdir / "build" / "npm" / dist, exe)
+    check_mcp(dist, workdir / "build" / "npm" / dist, exe)
 
 
 def main() -> int:
