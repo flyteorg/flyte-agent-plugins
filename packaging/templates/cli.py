@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 
-__all__ = ["main", "plugin_root", "TARGETS"]
+__all__ = ["main", "plugin_root", "resolve_target", "TARGETS"]
 
 
 def plugin_root() -> Path:
@@ -30,8 +30,9 @@ class Target:
     label: str
     user: str
     project: str | None
-    # A directory whose existence means "this harness is set up on this machine".
-    marker: str
+    # Directories whose existence means "this harness is set up on this machine".
+    # More than one when several harnesses share a skills location.
+    markers: tuple[str, ...]
 
     def dir_for(self, project: bool, root: Path) -> Path | None:
         if project:
@@ -39,26 +40,38 @@ class Target:
         return (Path.home() / self.user).resolve()
 
 
-# Skill discovery locations, as documented by each harness. `codex` uses the
-# cross-harness `.agents/skills` convention, so anything else reading that
-# standard location picks the skills up too -- Hermes reads it for project
-# skills as well, alongside its own `.hermes/skills`.
+# Skill discovery locations, as documented by each harness. `agents` is the
+# cross-harness `.agents/skills` convention rather than any one harness: Codex
+# reads it for user and project skills, and Hermes reads it for project skills
+# alongside its own `.hermes/skills`. Anything else honouring the convention
+# picks the skills up for free, which makes it the portable target.
 TARGETS: dict[str, Target] = {
     t.name: t
     for t in (
-        Target("claude", "Claude Code", ".claude/skills", ".claude/skills", ".claude"),
-        Target("codex", "Codex CLI", ".agents/skills", ".agents/skills", ".codex"),
-        Target("hermes", "Hermes", ".hermes/skills", ".hermes/skills", ".hermes"),
+        Target("agents", "Agent Skills standard", ".agents/skills", ".agents/skills", (".agents", ".codex")),
+        Target("claude", "Claude Code", ".claude/skills", ".claude/skills", (".claude",)),
+        Target("hermes", "Hermes", ".hermes/skills", ".hermes/skills", (".hermes",)),
         Target(
             "opencode",
             "opencode",
             ".config/opencode/skills",
             ".opencode/skills",
-            ".config/opencode",
+            (".config/opencode",),
         ),
-        Target("pi", "pi", ".pi/agent/skills", None, ".pi"),
+        Target("pi", "pi", ".pi/agent/skills", None, (".pi",)),
     )
 }
+
+# `codex` predates the `agents` name and stays valid; it is the same location.
+ALIASES = {"codex": "agents"}
+
+
+def resolve_target(name: str) -> Target:
+    return TARGETS[ALIASES.get(name, name)]
+
+
+def target_choices() -> list[str]:
+    return sorted(set(TARGETS) | set(ALIASES))
 
 
 def skill_dirs() -> list[Path]:
@@ -68,8 +81,11 @@ def skill_dirs() -> list[Path]:
 
 
 def detect() -> list[Target]:
-    """Targets whose harness looks installed (its config dir exists)."""
-    return [t for t in TARGETS.values() if (Path.home() / t.marker).is_dir()]
+    """Targets whose harness looks installed (a config dir for it exists)."""
+    home = Path.home()
+    return [
+        t for t in TARGETS.values() if any((home / m).is_dir() for m in t.markers)
+    ]
 
 
 def _resolve(args) -> list[tuple[Target | None, Path]]:
@@ -79,7 +95,8 @@ def _resolve(args) -> list[tuple[Target | None, Path]]:
         return [(None, Path(args.dir).expanduser().resolve())]
 
     if args.target:
-        targets = [TARGETS[name] for name in args.target]
+        # `--target codex --target agents` names one location twice; install once.
+        targets = list(dict.fromkeys(resolve_target(name) for name in args.target))
     else:
         targets = detect()
         if not targets:
@@ -191,8 +208,11 @@ def _add_target_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--target",
         action="append",
-        choices=sorted(TARGETS),
-        help="Harness to target (repeatable). Default: auto-detect installed harnesses.",
+        choices=target_choices(),
+        help=(
+            "Harness to target (repeatable). `agents` is the harness-agnostic "
+            "`.agents/skills` convention. Default: auto-detect installed harnesses."
+        ),
     )
     p.add_argument(
         "--dir",
