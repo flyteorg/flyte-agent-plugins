@@ -225,6 +225,68 @@ result = flyte.run(
 )
 ```
 
+## Managing Triggers
+
+Triggers schedule a task to run on a cron. Full lifecycle CLI:
+
+### Create a trigger
+
+```bash
+flyte create trigger <task_name> <trigger_name> \
+  --schedule "0 9 * * 1" \
+  --project flytesnacks --domain development
+```
+
+The task name comes first, then the trigger name (see the CLI arg-order note
+below). `--schedule` is required and accepts any cron expression.
+
+### Deactivate (pause but keep registered)
+
+```bash
+flyte update trigger <trigger_name> <task_name> \
+  --deactivate \
+  --project flytesnacks --domain development
+```
+
+The trigger stays registered — the task is not re-deployed — but no new runs
+fire until reactivation. Useful for pausing a schedule during a data outage,
+a downstream freeze, or a debug window.
+
+### Re-activate
+
+```bash
+flyte update trigger <trigger_name> <task_name> \
+  --activate \
+  --project flytesnacks --domain development
+```
+
+`--activate` and `--deactivate` are mutually exclusive; exactly one is required.
+
+### Delete permanently
+
+```bash
+flyte delete trigger <trigger_name> <task_name> \
+  --project flytesnacks --domain development
+```
+
+Removes the trigger from the cluster. The task itself is untouched — this
+operates on the schedule binding only.
+
+### CLI arg-order gotcha
+
+`flyte create trigger` takes `TASK_NAME NAME`, but `flyte update trigger` and
+`flyte delete trigger` take `NAME TASK_NAME` — the positional order is
+inverted between creation and mutation. Verify with:
+
+```bash
+flyte create trigger --help    # Usage: flyte create trigger [OPTIONS] TASK_NAME NAME
+flyte update trigger --help    # Usage: flyte update trigger [OPTIONS] NAME TASK_NAME
+flyte delete trigger --help    # Usage: flyte delete trigger [OPTIONS] NAME TASK_NAME
+```
+
+If you get `Error: Trigger '<x>' not found for task '<y>'`, you may have the
+args in create-order instead of update-order.
+
 ## Running Tasks (vs Workflows)
 
 ### Run a single task
