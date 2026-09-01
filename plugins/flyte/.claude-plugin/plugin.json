@@ -1,7 +1,7 @@
 {
   "name": "flyte",
   "description": "Work with Flyte 2. Deploy Flyte on AWS or kind, author and run workflows, apps, agents, data, and ML workloads with the SDK, and operate your cluster through bundled MCP servers.",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "author": {
     "name": "flyteorg"
   }
