@@ -411,3 +411,4 @@ as MCP tools taking the run name.
 4. **Don't use Union-only features** — avoid `ReusePolicy` and other Union-specific APIs. Write code that works on open-source Flyte v2.
 5. **Don't use `asyncio.gather` for heavy workloads** — use `flyte.map` for parallel container execution. `asyncio.gather` is for light fan-out within a single task.
 6. **Don't forget `flyte.init_from_config()`** — required before `flyte.serve()` for apps.
+7. **Don't run scripts from a subdirectory** — `.flyte/config.yaml` is discovered relative to the current working directory. Always `cd` to the directory containing your `.flyte/config.yaml` (typically the project root) before invoking `flyte run`, `flyte deploy`, `flyte serve`, or any Python file that calls `flyte.init_from_config()`. Running from `src/`, `pipelines/`, or any nested directory will silently miss your project config and fall back to CLI-only defaults.
