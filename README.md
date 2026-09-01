@@ -120,6 +120,7 @@ pi install git:github.com/flyteorg/flyte-agent-plugins@<tag>         # pinned to
 | [`flyte-deploy-aws`](plugins/flyte/skills/flyte-deploy-aws) | Deploy a Flyte 2 (`flyte-binary`) cluster on AWS from scratch — EKS + S3 + RDS PostgreSQL + AWS Load Balancer Controller + `helm`, with optional TLS (ACM, incl. cross-account DNS) and Okta/OIDC SSO. |
 | [`deploy-flyte-kind`](plugins/flyte/skills/deploy-flyte-kind) | Deploy a Flyte 2 (`flyte-binary`) cluster on `kind` — on your local machine or a DigitalOcean droplet (for AWS EC2 or GCP VMs, see `deploy-flyte-kind-vm`), backed by a hosted PostgreSQL (Supabase/external) and object store (S3/R2), with optional OIDC auth via Traefik + oauth2-proxy. |
 | [`deploy-flyte-kind-vm`](plugins/flyte/skills/deploy-flyte-kind-vm) | Provision a host (local or a fresh DigitalOcean / AWS EC2 / GCP VM), install the tooling, and run the kind Flyte deploy on it with access tunneled back to your machine. |
+| [`deploy-flyte-core-kind`](plugins/flyte/skills/deploy-flyte-core-kind) | Deploy the **split** `flyte-core` chart on `kind` with an image built from your own checkout — every service as its own Deployment, in-cluster PostgreSQL + MinIO, one Traefik origin, no registry and no cloud account. For chart development and pre-EKS testing. |
 | [`start-dex-local`](plugins/flyte/skills/start-dex-local) | Deploy Dex as an in-cluster OIDC provider for testing kind-based Flyte auth with no cloud account or real users. |
 
 ### SDK / Workflow Authoring
