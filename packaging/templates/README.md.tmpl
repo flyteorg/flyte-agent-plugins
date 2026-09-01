@@ -44,15 +44,17 @@ Or `pip install {{DIST}}` and then `{{DIST}} install`.
 The CLI auto-detects which harnesses are set up on the machine and copies the
 skills into each one's skills directory:
 
-| Harness | User-level directory | Project-level (`--project`) |
-|---|---|---|
-| Claude Code | `~/.claude/skills/` | `.claude/skills/` |
-| Codex CLI | `~/.agents/skills/` | `.agents/skills/` |
-| opencode | `~/.config/opencode/skills/` | `.opencode/skills/` |
-| pi | `~/.pi/agent/skills/` | — |
+| `--target` | User-level directory | Project-level (`--project`) | Read by |
+|---|---|---|---|
+| `agents` | `~/.agents/skills/` | `.agents/skills/` | Codex, Hermes (project), any harness following the convention |
+| `claude` | `~/.claude/skills/` | `.claude/skills/` | Claude Code |
+| `hermes` | `~/.hermes/skills/` | `.hermes/skills/` | Hermes |
+| `opencode` | `~/.config/opencode/skills/` | `.opencode/skills/` | opencode |
+| `pi` | `~/.pi/agent/skills/` | — | pi |
 
 ```bash
-{{DIST}} install --target claude --target codex   # pick harnesses explicitly
+{{DIST}} install --target claude --target hermes  # pick harnesses explicitly
+{{DIST}} install --target agents                  # the cross-harness standard location
 {{DIST}} install --dir ./somewhere/skills         # arbitrary directory
 {{DIST}} install --project                        # this repo only
 {{DIST}} install --dry-run                        # show what would change

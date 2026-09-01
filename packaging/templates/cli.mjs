@@ -16,14 +16,24 @@ const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 // requires `.claude-plugin/plugin.json` at the top level of an `npm` source.
 const PLUGIN_ROOT = PKG_ROOT;
 
-// Skill discovery locations, as documented by each harness. `codex` uses the
-// cross-harness `.agents/skills` convention.
+// Skill discovery locations, as documented by each harness. `agents` is the
+// cross-harness `.agents/skills` convention rather than any one harness: Codex
+// reads it for user and project skills, and Hermes reads it for project skills
+// alongside its own `.hermes/skills`. Anything else honouring the convention
+// picks the skills up for free, which makes it the portable target.
 const TARGETS = {
-  claude: { label: "Claude Code", user: ".claude/skills", project: ".claude/skills", marker: ".claude" },
-  codex: { label: "Codex CLI", user: ".agents/skills", project: ".agents/skills", marker: ".codex" },
-  opencode: { label: "opencode", user: ".config/opencode/skills", project: ".opencode/skills", marker: ".config/opencode" },
-  pi: { label: "pi", user: ".pi/agent/skills", project: null, marker: ".pi" },
+  agents: { label: "Agent Skills standard", user: ".agents/skills", project: ".agents/skills", markers: [".agents", ".codex"] },
+  claude: { label: "Claude Code", user: ".claude/skills", project: ".claude/skills", markers: [".claude"] },
+  hermes: { label: "Hermes", user: ".hermes/skills", project: ".hermes/skills", markers: [".hermes"] },
+  opencode: { label: "opencode", user: ".config/opencode/skills", project: ".opencode/skills", markers: [".config/opencode"] },
+  pi: { label: "pi", user: ".pi/agent/skills", project: null, markers: [".pi"] },
 };
+
+// `codex` predates the `agents` name and stays valid; it is the same location.
+const ALIASES = { codex: "agents" };
+
+const targetChoices = () => [...new Set([...Object.keys(TARGETS), ...Object.keys(ALIASES)])].sort();
+const resolveTarget = (name) => TARGETS[ALIASES[name] ?? name];
 
 function skillDirs() {
   const root = path.join(PLUGIN_ROOT, "skills");
@@ -37,7 +47,7 @@ function skillDirs() {
 
 function detect() {
   return Object.entries(TARGETS).filter(([, t]) =>
-    fs.existsSync(path.join(os.homedir(), t.marker)),
+    t.markers.some((m) => fs.existsSync(path.join(os.homedir(), m))),
   );
 }
 
@@ -59,8 +69,8 @@ function parseArgs(argv) {
     }
   }
   for (const t of opts.targets) {
-    if (!(t in TARGETS)) {
-      console.error(`Unknown target: ${t} (choose from ${Object.keys(TARGETS).sort().join(", ")})`);
+    if (!resolveTarget(t)) {
+      console.error(`Unknown target: ${t} (choose from ${targetChoices().join(", ")})`);
       process.exit(2);
     }
   }
@@ -70,8 +80,9 @@ function parseArgs(argv) {
 function resolveDests(opts) {
   if (opts.dir) return [[null, path.resolve(opts.dir)]];
 
+  // `--target codex --target agents` names one location twice; install once.
   let entries = opts.targets.length
-    ? opts.targets.map((n) => [n, TARGETS[n]])
+    ? [...new Map(opts.targets.map((n) => [ALIASES[n] ?? n, resolveTarget(n)]))]
     : detect();
   if (!entries.length) {
     entries = [["claude", TARGETS.claude]];
@@ -162,7 +173,9 @@ Commands:
   version       Print the plugin version
 
 Options:
-  --target <${Object.keys(TARGETS).sort().join("|")}>   Harness to target (repeatable; default: auto-detect)
+  --target <${targetChoices().join("|")}>
+                   Harness to target (repeatable; default: auto-detect).
+                   \`agents\` is the harness-agnostic .agents/skills convention.
   --dir <path>     Install into this directory instead of a harness default
   --project        Use the project-level skills directory under the current directory
   --force          Overwrite existing skills

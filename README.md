@@ -20,15 +20,19 @@ That copies all 21 skills into whichever harness directories it finds on your ma
 no arguments needed. (`pip install flyte-skills` then `flyte-skills install` works the
 same way.)
 
-| Harness | User-level directory | Project-level (`--project`) |
-|---|---|---|
-| Claude Code | `~/.claude/skills/` | `.claude/skills/` |
-| Codex CLI | `~/.agents/skills/` | `.agents/skills/` |
-| opencode | `~/.config/opencode/skills/` | `.opencode/skills/` |
-| pi | `~/.pi/agent/skills/` | — |
+| `--target` | User-level directory | Project-level (`--project`) | Read by |
+|---|---|---|---|
+| `agents` | `~/.agents/skills/` | `.agents/skills/` | Codex, Hermes (project), any harness following the convention |
+| `claude` | `~/.claude/skills/` | `.claude/skills/` | Claude Code |
+| `hermes` | `~/.hermes/skills/` | `.hermes/skills/` | Hermes |
+| `opencode` | `~/.config/opencode/skills/` | `.opencode/skills/` | opencode |
+| `pi` | `~/.pi/agent/skills/` | — | pi |
+
+`--target codex` still works as an alias for `agents` — it is the same directory.
 
 ```bash
-flyte-skills install --target claude --target codex   # pick harnesses explicitly
+flyte-skills install --target claude --target hermes  # pick harnesses explicitly
+flyte-skills install --target agents                  # the cross-harness standard location
 flyte-skills install --dir ~/somewhere/skills         # any directory you choose
 flyte-skills install --project                        # this repo only
 flyte-skills install --dry-run                        # preview, change nothing
@@ -42,6 +46,11 @@ flyte-skills list                                     # list the bundled skills
 > [Install as a plugin](#install-as-a-plugin-claude-code-and-codex) if you want them, or
 > [Adding the MCP servers elsewhere](#adding-the-mcp-servers-elsewhere) to wire them up by
 > hand.
+
+**Harness-agnostic installs.** `--target agents` writes to `~/.agents/skills/`, the
+convention shared across agent CLIs, so any harness honouring it picks the skills up
+without a harness-specific flag. `--dir <path>` writes them anywhere else you like — both
+work the same with `--project`, `--dry-run`, and `uninstall`.
 
 The package is published under two interchangeable names, `flyte-skills` and
 `flyte-agent-plugins` — identical mirrors of the same release, so pick either. To pin a
@@ -98,21 +107,26 @@ path expanded, so `${CLAUDE_PLUGIN_ROOT}` — which Codex does not expand,
 
 The skills are plain [Agent Skills](https://agentskills.io) (`SKILL.md` + YAML
 frontmatter), so they work in any harness that supports the standard. `flyte-skills
-install` above covers four of the five; each harness also has its own installer, which is
-what you want for Hermes, or when you would rather track the repo than a release.
+install` above covers all five; each harness also has its own installer, which is what you
+want when you would rather track the repo than a release, or to install a single skill
+rather than all 21.
 
 | Harness | Skills | MCP servers | `flyte-skills install` |
 |---|---|---|---|
 | Claude Code | all 21 | both, automatically | `--target claude` |
-| Codex CLI | all 21 | both, automatically | `--target codex` |
-| Hermes | per-skill | none — add manually | not a target — use `hermes` |
+| Codex CLI | all 21 | both, automatically | `--target agents` |
+| Hermes | per-skill | none — add manually | `--target hermes` |
 | opencode | all 21 | none — add manually | `--target opencode` |
 | pi | all 21 | none — add manually | `--target pi` |
 
 ### Hermes
 
-Install individual skills by their repo path (Hermes installs from the default
-branch; ref pinning is not supported):
+`flyte-skills install --target hermes` writes all 21 into `~/.hermes/skills/`, which Hermes
+auto-discovers with no registration step. Add `--project` for `<repo>/.hermes/skills/` —
+project skills need `hermes skills trust` before first use.
+
+To install skills individually instead, use their repo path (Hermes installs from the
+default branch; ref pinning is not supported):
 
 ```
 hermes skills install flyteorg/flyte-agent-plugins/plugins/flyte/skills/<skill-name>
