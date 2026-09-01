@@ -28,7 +28,7 @@ flyte-binary                       flyte-core
 | Pods | 1 + console | 8 + console |
 | Scaling | vertical only | per-component `replicaCount` |
 | Blast radius | one crash takes everything | executor crash doesn't drop the API |
-| Chart source | published Helm repo | **not published yet — install from a git clone** |
+| Chart source | published Helm repo (`flyte-binary`) | published Helm repo (`flyte-core`, `v2.x` — see Step 5) |
 | Config keys | `flyte-core-components.*` | `configuration.*` |
 | Operational cost | lowest | more pods, more nodes, more moving parts |
 
@@ -59,15 +59,32 @@ Two things to carry forward from that file for this chart specifically:
 
 ## Step 5 — Get the chart
 
-`flyte-core` is not in the Helm repo. Clone and build its dependency:
-
 ```bash
-git clone https://github.com/flyteorg/flyte && cd flyte/charts/flyte-core
-helm dependency build      # REQUIRED — Chart.yaml declares file://../flyteconnector
+helm repo add flyteorg https://flyteorg.github.io/flyte && helm repo update flyteorg
+helm search repo flyteorg/flyte-core --versions | head
 ```
 
-Without `helm dependency build` every `helm template`/`install` fails with:
-`found in Chart.yaml, but missing in charts/ directory: flyteconnector`.
+> [!WARNING] Two different charts share the name `flyte-core`
+> The same index carries the **Flyte 1** chart under this name at `v1.16.x` — unrelated to
+> this one, with a different values schema and a different topology. Semver puts `v2.x` on
+> top, so an unpinned install currently lands on the split chart, but the two lines release
+> independently and the description is the only thing that distinguishes them. **Pin the
+> version** and check what you resolved:
+> ```bash
+> helm search repo flyteorg/flyte-core --versions | head -3
+> # v2.0.45  Distributed Flyte 2 core services   <= this chart
+> # v1.16.8  A Helm chart for Flyte core         <= Flyte 1, unrelated
+> ```
+
+**Installing from a git clone instead** (chart development, or a change not yet released)
+needs one extra step, because only the packaged chart bundles its subchart:
+
+```bash
+git clone --branch main https://github.com/flyteorg/flyte && cd flyte/charts/flyte-core
+helm dependency build      # REQUIRED from a clone — Chart.yaml declares file://../flyteconnector
+```
+
+Skipping it fails with `found in Chart.yaml, but missing in charts/ directory: flyteconnector`.
 
 **Image tags.** Every component's image defaults to `cr.flyte.org/flyteorg/flyte-binary-v2:latest`
 with `pullPolicy: IfNotPresent` — a floating tag and a pull policy that will happily keep a
@@ -188,26 +205,19 @@ If you would rather keep a strict `200`-only health check, give the console its 
 (`ingress.httpExtraPaths` plus a separate Ingress resource in the same ALB group) and drop
 `/v2` from the shared one.
 
-### CRD — install once, and re-apply on EVERY upgrade
+### CRD
 
-`flyte-core` ships `taskactions.flyte.org` in the chart's **root `crds/` directory**. Helm
-special-cases that path: it installs the CRD on `helm install`, then **ignores it forever** —
-`helm upgrade` never updates it, `helm uninstall` never deletes it.
+`flyte-core` ships `taskactions.flyte.org` under **`templates/crds/`**, not the root `crds/`
+directory Helm special-cases — so it is an ordinary template that `helm upgrade` reconciles
+and `helm uninstall` deletes, exactly like `flyte-binary`. No manual re-apply step.
 
 ```bash
 kubectl get crd taskactions.flyte.org -o jsonpath='{.status.conditions[?(@.type=="Established")].status}'   # => True
 ```
 
-The install-time behaviour is good (no accidental CRD deletion taking all TaskActions with
-it). The upgrade behaviour is a trap: **after every `helm upgrade` that bumps the chart, apply
-the CRD yourself**, or a new TaskAction field will be silently pruned by the apiserver:
-
-```bash
-kubectl apply -f ./crds/flyte.org_taskactions.yaml      # from the clone, after every upgrade
-```
-
-Make this part of your upgrade runbook. `flyte-binary` does not need it (it ships the CRD
-under `templates/`, so Helm reconciles it) — do not carry that assumption over.
+The flip side of not being in `crds/`: **`helm uninstall` takes the CRD with it**, and every
+TaskAction along with it. Deleting the release on a cluster whose run history matters is
+destructive in a way the `crds/` layout would have prevented.
 
 ## Step 7 — Verify
 
@@ -422,12 +432,11 @@ before working around them.
    keys and then splats all of `configuration.webhook` into the same YAML mapping, producing a
    **duplicate key**. `yaml.v3` rejects duplicates, so the executor fails to load its config and
    crashloops. `listenPort`, `cacheInvalidationPort`, and `webhookTimeout` are safe.
-3. **Secret cache invalidation is silently broken.** The chart writes `secret.webhookURL`, but
-   the Go struct expects `secret.webhook.url`. Config parsing is non-strict, so the key is
-   dropped and the secret service posts invalidations to its own `localhost:9444` instead of the
-   executor. Consequence: **after updating a secret, task pods keep injecting the old value
-   until the webhook's cache TTL expires.** There is no error — only a `Warnf` in the secret
-   pod. Warn the user; plan secret rotations around the TTL until it is fixed.
+3. ~~Secret cache invalidation broken~~ — **fixed as of `v2.0.45`.** The chart used to write
+   `secret.webhookURL` while the Go struct expects `secret.webhook.url`; values now carry
+   `secret.webhook.url` templated to the executor cache service. On an older chart the symptom
+   was silent: after updating a secret, task pods kept injecting the old value until the
+   webhook cache TTL expired, with only a `Warnf` in the secret pod.
 4. **`SettingsService` is not routed by the ingress.** `runs` mounts
    `flyteidl2.settings.SettingsService`, but it is missing from the chart's ingress route list,
    so those RPCs 404 at the ALB. In-cluster callers are unaffected. Add it via
@@ -444,8 +453,9 @@ before working around them.
 
 ## Gotchas
 
-1. **`helm dependency build` is mandatory** before any `helm template`/`install` from the
-   clone — the chart declares a `file://../flyteconnector` dependency.
+1. **`helm dependency build` is mandatory when installing from a git clone** — the chart
+   declares a `file://../flyteconnector` dependency. The packaged chart from the Helm repo
+   bundles it, so this does not apply there.
 2. **Check every pod, not just one.** Eight Deployments means eight ways to be half-up. A `200`
    from the console and a green `helm install` do not prove the API works.
 3. **Default `storagePrefix` is fake.** `configuration.runs.storagePrefix` defaults to
