@@ -48,11 +48,12 @@ skills into each one's skills directory:
 |---|---|---|
 | Claude Code | `~/.claude/skills/` | `.claude/skills/` |
 | Codex CLI | `~/.agents/skills/` | `.agents/skills/` |
+| Hermes | `~/.hermes/skills/` | `.hermes/skills/` |
 | opencode | `~/.config/opencode/skills/` | `.opencode/skills/` |
 | pi | `~/.pi/agent/skills/` | — |
 
 ```bash
-{{DIST}} install --target claude --target codex   # pick harnesses explicitly
+{{DIST}} install --target claude --target hermes  # pick harnesses explicitly
 {{DIST}} install --dir ./somewhere/skills         # arbitrary directory
 {{DIST}} install --project                        # this repo only
 {{DIST}} install --dry-run                        # show what would change

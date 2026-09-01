@@ -24,6 +24,7 @@ same way.)
 |---|---|---|
 | Claude Code | `~/.claude/skills/` | `.claude/skills/` |
 | Codex CLI | `~/.agents/skills/` | `.agents/skills/` |
+| Hermes | `~/.hermes/skills/` | `.hermes/skills/` |
 | opencode | `~/.config/opencode/skills/` | `.opencode/skills/` |
 | pi | `~/.pi/agent/skills/` | — |
 
@@ -98,21 +99,26 @@ path expanded, so `${CLAUDE_PLUGIN_ROOT}` — which Codex does not expand,
 
 The skills are plain [Agent Skills](https://agentskills.io) (`SKILL.md` + YAML
 frontmatter), so they work in any harness that supports the standard. `flyte-skills
-install` above covers four of the five; each harness also has its own installer, which is
-what you want for Hermes, or when you would rather track the repo than a release.
+install` above covers all five; each harness also has its own installer, which is what you
+want when you would rather track the repo than a release, or to install a single skill
+rather than all 21.
 
 | Harness | Skills | MCP servers | `flyte-skills install` |
 |---|---|---|---|
 | Claude Code | all 21 | both, automatically | `--target claude` |
 | Codex CLI | all 21 | both, automatically | `--target codex` |
-| Hermes | per-skill | none — add manually | not a target — use `hermes` |
+| Hermes | per-skill | none — add manually | `--target hermes` |
 | opencode | all 21 | none — add manually | `--target opencode` |
 | pi | all 21 | none — add manually | `--target pi` |
 
 ### Hermes
 
-Install individual skills by their repo path (Hermes installs from the default
-branch; ref pinning is not supported):
+`flyte-skills install --target hermes` writes all 21 into `~/.hermes/skills/`, which Hermes
+auto-discovers with no registration step. Add `--project` for `<repo>/.hermes/skills/` —
+project skills need `hermes skills trust` before first use.
+
+To install skills individually instead, use their repo path (Hermes installs from the
+default branch; ref pinning is not supported):
 
 ```
 hermes skills install flyteorg/flyte-agent-plugins/plugins/flyte/skills/<skill-name>

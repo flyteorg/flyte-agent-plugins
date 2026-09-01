@@ -41,12 +41,14 @@ class Target:
 
 # Skill discovery locations, as documented by each harness. `codex` uses the
 # cross-harness `.agents/skills` convention, so anything else reading that
-# standard location picks the skills up too.
+# standard location picks the skills up too -- Hermes reads it for project
+# skills as well, alongside its own `.hermes/skills`.
 TARGETS: dict[str, Target] = {
     t.name: t
     for t in (
         Target("claude", "Claude Code", ".claude/skills", ".claude/skills", ".claude"),
         Target("codex", "Codex CLI", ".agents/skills", ".agents/skills", ".codex"),
+        Target("hermes", "Hermes", ".hermes/skills", ".hermes/skills", ".hermes"),
         Target(
             "opencode",
             "opencode",

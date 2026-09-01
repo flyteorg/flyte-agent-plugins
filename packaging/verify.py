@@ -41,8 +41,8 @@ def check(condition: bool, message: str) -> None:
         FAILURES.append(message)
 
 
-def run(cmd: list[str], cwd: Path | None = None, **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, cwd=cwd, check=True, text=True, capture_output=True, **kw)
+def run(cmd: list[str], cwd: Path | None = None, check: bool = True, **kw) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, cwd=cwd, check=check, text=True, capture_output=True, **kw)
 
 
 def check_versions() -> None:
@@ -55,6 +55,26 @@ def check_versions() -> None:
     ):
         versions[path.relative_to(REPO).as_posix()] = json.loads(path.read_text())["version"]
     check(len(set(versions.values())) == 1, f"one version across manifests: {versions}")
+
+
+def check_targets(workdir: Path, npm_pkg: Path, py_exe: str) -> None:
+    """The Python and Node CLIs declare harness targets independently, so a
+    target added to one and forgotten in the other is a real drift risk."""
+    print("targets")
+    node_out = run(["node", str(npm_pkg / "bin" / "cli.mjs"), "install", "--target", "nope"], check=False)
+    py_out = run([py_exe, "install", "--target", "nope"], check=False)
+
+    def parse(stderr: str) -> set[str]:
+        # Both CLIs reject an unknown target by listing the valid ones, but
+        # argparse quotes its choices and the Node parser does not.
+        listed = stderr.split("choose from ")[-1].split(")")[0]
+        return {t.strip().strip("'\"") for t in listed.split(",") if t.strip()}
+
+    node_targets, py_targets = parse(node_out.stderr), parse(py_out.stderr)
+    check(
+        node_targets == py_targets and len(py_targets) > 1,
+        f"both CLIs declare the same targets: {sorted(py_targets)}",
+    )
 
 
 def check_skills() -> None:
@@ -140,6 +160,7 @@ def check_pypi(dist: str, pkg: Path, workdir: Path) -> None:
         emitted.count("\n") == 1 and Path(emitted.strip()).is_absolute(),
         "`emit-plugin` prints exactly one absolute path",
     )
+    check_targets(workdir, workdir / "build" / "npm" / dist, exe)
 
 
 def main() -> int:

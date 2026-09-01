@@ -17,10 +17,12 @@ const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const PLUGIN_ROOT = PKG_ROOT;
 
 // Skill discovery locations, as documented by each harness. `codex` uses the
-// cross-harness `.agents/skills` convention.
+// cross-harness `.agents/skills` convention, which Hermes also reads for
+// project skills alongside its own `.hermes/skills`.
 const TARGETS = {
   claude: { label: "Claude Code", user: ".claude/skills", project: ".claude/skills", marker: ".claude" },
   codex: { label: "Codex CLI", user: ".agents/skills", project: ".agents/skills", marker: ".codex" },
+  hermes: { label: "Hermes", user: ".hermes/skills", project: ".hermes/skills", marker: ".hermes" },
   opencode: { label: "opencode", user: ".config/opencode/skills", project: ".opencode/skills", marker: ".config/opencode" },
   pi: { label: "pi", user: ".pi/agent/skills", project: null, marker: ".pi" },
 };
