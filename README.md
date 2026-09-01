@@ -12,6 +12,8 @@ gets you both at once — see [Bundled MCP servers](#bundled-mcp-servers).
 
 ## Install
 
+This guide assumes that you have [uv installed](https://docs.astral.sh/uv/getting-started/installation/):
+
 ```bash
 uvx flyte-skills install
 ```
@@ -41,6 +43,7 @@ uvx flyte-skills uninstall                                # remove them again
 uvx flyte-skills list                                     # list the bundled skills
 ```
 
+> [!NOTE]
 > **This installs the skills, not the MCP servers.** The two servers that let Claude search
 > Flyte docs and act on your cluster ship with the **plugin**, not the CLI — see
 > [Install as a plugin](#install-as-a-plugin-claude-code-and-codex) if you want them, or
@@ -52,12 +55,12 @@ uvx flyte-skills list                                     # list the bundled ski
 `flyte-skills install` deliberately writes skills only. To add the servers too, use `flyte-agent-plugins`:
 
 ```bash
-flyte-agent-plugins mcp install                               # claude/codex on PATH
-flyte-agent-plugins mcp install --target claude --scope user  # one harness, one scope
-flyte-agent-plugins mcp install --server flyte-docs           # just the docs server
-flyte-agent-plugins mcp install --dry-run                     # print commands only
-flyte-agent-plugins mcp list                                  # what would be added
-flyte-agent-plugins mcp uninstall                             # remove them again
+uvx flyte-agent-plugins mcp install                               # claude/codex on PATH
+uvx flyte-agent-plugins mcp install --target claude --scope user  # one harness, one scope
+uvx flyte-agent-plugins mcp install --server flyte-docs           # just the docs server
+uvx flyte-agent-plugins mcp install --dry-run                     # print commands only
+uvx flyte-agent-plugins mcp list                                  # what would be added
+uvx flyte-agent-plugins mcp uninstall                             # remove them again
 ```
 
 This drives each harness's own CLI (`claude mcp add-json`, `codex mcp add`) rather than
