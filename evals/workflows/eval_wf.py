@@ -1,7 +1,7 @@
 """Flyte orchestration of the flyte-agent-plugin eval harness.
 
-Runs on demo.hosted.unionai.cloud (org demo / project flytesnacks / domain
-development, remote image builder — see evals/config/flyte.yaml). The workflow
+Runs on demo.hosted.unionai.cloud (org demo / project flyte-agent-plugins-evals /
+domain development, remote image builder — see evals/config/flyte.yaml). The workflow
 expands the scenario matrix, fans out one action per (scenario x harness) via
 `flyte.map`, then aggregates verdicts into a scorecard.
 
