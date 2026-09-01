@@ -12,7 +12,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const BIN_DIR = path.dirname(fileURLToPath(import.meta.url));
+const PKG_ROOT = path.resolve(BIN_DIR, "..");
+
+// Written by packaging/build.py; absent only when running from a checkout.
+const HAS_MCP = (() => {
+  const f = path.join(BIN_DIR, "features.json");
+  return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")).mcp === true : true;
+})();
 // For the npm distribution the package root IS the plugin root: Claude Code
 // requires `.claude-plugin/plugin.json` at the top level of an `npm` source.
 const PLUGIN_ROOT = PKG_ROOT;
@@ -373,8 +380,9 @@ Commands:
   list          List the bundled skills
   path          Print the bundled plugin directory
   emit-plugin   Print the plugin directory path (for a marketplace \`command\` source)
-  version       Print the plugin version
-  mcp           Manage the bundled MCP servers (\`mcp --help\`)
+  version       Print the plugin version${
+  HAS_MCP ? "\n  mcp           Manage the bundled MCP servers (`mcp --help`)" : ""
+}
 
 Options:
   --target <${targetChoices().join("|")}>
@@ -391,7 +399,19 @@ function main(argv) {
     process.stdout.write(USAGE);
     return 2;
   }
-  if (argv[0] === "mcp") return mcpMain(argv.slice(1));
+  if (argv[0] === "mcp") {
+    if (!HAS_MCP) {
+      // A bare "unknown command" would not tell you the subcommand exists under
+      // the other distribution, which is the only thing worth knowing here.
+      console.error(
+        "This package installs skills only; the `mcp` subcommand ships with the " +
+          "flyte-agent-plugins distribution.\n\n" +
+          "    npx flyte-agent-plugins mcp install\n",
+      );
+      return 2;
+    }
+    return mcpMain(argv.slice(1));
+  }
   const opts = parseArgs(argv);
   switch (opts.command) {
     case "install":

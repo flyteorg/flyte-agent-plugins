@@ -6,9 +6,10 @@
 packaged for every agent harness — plus two MCP servers (`flyte-docs`, `flyte-cluster`)
 for harnesses that read the bundled `.mcp.json`.
 
-> `{{DIST}}` and `{{OTHER_DIST}}` are **identical mirrors** published from
-> [the same repo]({{REPO_URL}}) at the same version. Install whichever name you
-> prefer — installing both just gives you two copies of the same skills.
+> `{{DIST}}` and `{{OTHER_DIST}}` are published from [the same repo]({{REPO_URL}})
+> at the same version and carry the same {{SKILL_COUNT}} skills. They differ in one
+> thing: only `flyte-agent-plugins` ships the `mcp` subcommand for the bundled MCP
+> servers. Installing both just gives you two copies of the same skills.
 
 ## Install
 
@@ -63,6 +64,7 @@ skills into each one's skills directory:
 {{DIST}} path                                     # print the bundled plugin root
 ```
 
+<!-- mcp-only:start -->
 `{{DIST}} install` writes skills only. `{{DIST}} mcp install` adds the two bundled
 MCP servers as well, by driving `claude mcp add-json` / `codex mcp add` rather than
 editing config files — so it needs one of those CLIs on your PATH:
@@ -79,6 +81,7 @@ queries to a Union-operated endpoint, and `flyte-cluster` gets control-plane acc
 to your cluster (which also needs `uv` and a Flyte login). Harnesses that consume
 the whole plugin (Claude Code, Codex) pick the servers up from `.mcp.json`
 automatically and need none of this.
+<!-- mcp-only:end -->
 
 ## Native install paths
 

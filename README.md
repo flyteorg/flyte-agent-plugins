@@ -6,14 +6,14 @@ A plugin marketplace for working with [Flyte](https://flyte.org) — in
 supports [Agent Skills](https://agentskills.io).
 
 21 skills, plus two **MCP servers** that let Claude search Flyte docs and act on your own
-cluster. `uvx flyte-agent-plugins install` gets you the skills in any harness; installing
-the `flyte` plugin gets you the skills *and* the servers — see
-[Bundled MCP servers](#bundled-mcp-servers).
+cluster. `uvx flyte-skills install` gets you the skills in any harness;
+`uvx flyte-agent-plugins mcp install` adds the servers, and installing the `flyte` plugin
+gets you both at once — see [Bundled MCP servers](#bundled-mcp-servers).
 
 ## Install
 
 ```bash
-uvx flyte-agent-plugins install
+uvx flyte-skills install
 ```
 
 That copies all 21 skills into whichever harness directories it finds on your machine —
@@ -31,14 +31,14 @@ same way.)
 `--target codex` still works as an alias for `agents` — it is the same directory.
 
 ```bash
-flyte-agent-plugins install --target claude --target hermes  # pick harnesses
-flyte-agent-plugins install --target agents                  # cross-harness standard
-flyte-agent-plugins install --dir ~/somewhere/skills         # any directory
-flyte-agent-plugins install --project                        # this repo only
-flyte-agent-plugins install --dry-run                        # preview, change nothing
-flyte-agent-plugins install --force                          # overwrite existing copies
-flyte-agent-plugins uninstall                                # remove them again
-flyte-agent-plugins list                                     # list the bundled skills
+uvx flyte-skills install --target claude --target hermes  # pick harnesses
+uvx flyte-skills install --target agents                  # cross-harness standard
+uvx flyte-skills install --dir ~/somewhere/skills         # any directory
+uvx flyte-skills install --project                        # this repo only
+uvx flyte-skills install --dry-run                        # preview, change nothing
+uvx flyte-skills install --force                          # overwrite existing copies
+uvx flyte-skills uninstall                                # remove them again
+uvx flyte-skills list                                     # list the bundled skills
 ```
 
 > **This installs the skills, not the MCP servers.** The two servers that let Claude search
@@ -49,7 +49,7 @@ flyte-agent-plugins list                                     # list the bundled 
 
 ### Adding the MCP servers with the CLI
 
-`flyte-agent-plugins install` deliberately writes skills only. To add the servers too:
+`flyte-skills install` deliberately writes skills only. To add the servers too, use `flyte-agent-plugins`:
 
 ```bash
 flyte-agent-plugins mcp install                               # claude/codex on PATH
@@ -76,10 +76,11 @@ convention shared across agent CLIs, so any harness honouring it picks the skill
 without a harness-specific flag. `--dir <path>` writes them anywhere else you like — both
 work the same with `--project`, `--dry-run`, and `uninstall`.
 
-The package is published under two interchangeable names. `flyte-agent-plugins` is the
-preferred one — it matches the repo and the marketplace — and `flyte-skills` is an
-identical mirror of the same release, so every command here works under either name. To
-pin a version, `uvx --from flyte-agent-plugins==<version> flyte-agent-plugins install`.
+**Two packages.** `flyte-skills` and `flyte-agent-plugins` carry the same 21 skills, so
+every `install` command above works under either name. They differ in one thing: only
+`flyte-agent-plugins` ships the `mcp` subcommand, so reach for it when you want the MCP
+servers too. To pin a version,
+`uvx --from flyte-skills==<version> flyte-skills install`.
 
 ## Install as a plugin (Claude Code and Codex)
 
