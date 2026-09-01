@@ -4,10 +4,10 @@ The skills in `plugins/flyte/` are published from this one source of truth:
 
 | Registry | Package | Install | Status |
 |---|---|---|---|
-| PyPI | [`flyte-skills`](https://pypi.org/project/flyte-skills/) | `uvx flyte-skills install` | published |
-| PyPI | [`flyte-agent-plugins`](https://pypi.org/project/flyte-agent-plugins/) | `uvx flyte-agent-plugins install` | published |
-| npm | `flyte-skills` | `npx flyte-skills install` | **built, not published** |
+| PyPI | [`flyte-agent-plugins`](https://pypi.org/project/flyte-agent-plugins/) | `uvx flyte-agent-plugins install` | published, **preferred** |
+| PyPI | [`flyte-skills`](https://pypi.org/project/flyte-skills/) | `uvx flyte-skills install` | published, mirror |
 | npm | `flyte-agent-plugins` | `npx flyte-agent-plugins install` | **built, not published** |
+| npm | `flyte-skills` | `npx flyte-skills install` | **built, not published** |
 
 **npm publishing is currently disabled** while distribution focuses on pip/uvx.
 The npm packages are still generated, packed, and validated on every CI run, so
@@ -17,7 +17,9 @@ turning them on later is a one-line change to `publish.yml` — see
 The two names are **identical mirrors**, not an alias plus a shim. Each carries
 the full payload, so each registry's download counter reports real installs of
 that name rather than a redirect — and both names stay reserved against
-squatting on Flyte-adjacent packages.
+squatting on Flyte-adjacent packages. `flyte-agent-plugins` is the name the docs
+lead with, since it matches the repo and the marketplace; `flyte-skills` works
+identically and stays supported.
 
 ## Why registries at all
 
@@ -147,12 +149,12 @@ through a counter:
 ```json
 {
   "name": "flyte",
-  "source": { "source": "npm", "package": "flyte-skills", "version": "^0.3.0" }
+  "source": { "source": "npm", "package": "flyte-agent-plugins", "version": "^0.3.0" }
 }
 ```
 
 There is no `pip` plugin source type. The PyPI package instead ships an
-installer CLI, and `flyte-skills emit-plugin` satisfies the `command` source
+installer CLI, and `flyte-agent-plugins emit-plugin` satisfies the `command` source
 contract (print one absolute path to the plugin directory, exit 0):
 
 ```json
@@ -160,7 +162,7 @@ contract (print one absolute path to the plugin directory, exit 0):
   "name": "flyte",
   "source": {
     "source": "command",
-    "command": "uvx --from flyte-skills flyte-skills emit-plugin",
+    "command": "uvx --from flyte-agent-plugins flyte-agent-plugins emit-plugin",
     "timeout": 120,
     "mode": "copy"
   }
