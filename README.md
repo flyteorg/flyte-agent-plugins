@@ -47,6 +47,30 @@ flyte-skills list                                     # list the bundled skills
 > [Adding the MCP servers elsewhere](#adding-the-mcp-servers-elsewhere) to wire them up by
 > hand.
 
+### Adding the MCP servers with the CLI
+
+`flyte-skills install` deliberately writes skills only. To add the servers too:
+
+```bash
+flyte-skills mcp install                    # whichever of claude/codex is on PATH
+flyte-skills mcp install --target claude --scope user
+flyte-skills mcp install --server flyte-docs   # just the docs search server
+flyte-skills mcp install --dry-run          # print the commands, change nothing
+flyte-skills mcp list                       # what would be added
+flyte-skills mcp uninstall                  # remove them again
+```
+
+This drives each harness's own CLI (`claude mcp add-json`, `codex mcp add`) rather than
+editing config files, so the harness owns its format and nothing else in your config is at
+risk. It therefore needs `claude` or `codex` on your PATH, and covers only those two —
+opencode, pi, and Hermes have no equivalent command, so use
+[Adding the MCP servers elsewhere](#adding-the-mcp-servers-elsewhere) for those.
+
+Two things worth knowing before you run it. These servers are **tools the agent can call**,
+not inert markdown: `flyte-docs` sends your search queries to a Union-operated endpoint,
+and `flyte-cluster` gets control-plane access to your cluster. And installing
+`flyte-cluster` does not make it work — it needs `uv` and a Flyte login.
+
 **Harness-agnostic installs.** `--target agents` writes to `~/.agents/skills/`, the
 convention shared across agent CLIs, so any harness honouring it picks the skills up
 without a harness-specific flag. `--dir <path>` writes them anywhere else you like — both

@@ -10,13 +10,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 
-__all__ = ["main", "plugin_root", "resolve_target", "TARGETS"]
+__all__ = ["main", "mcp_servers", "plugin_root", "resolve_target", "TARGETS"]
 
 
 def plugin_root() -> Path:
@@ -180,6 +182,174 @@ def cmd_uninstall(args) -> int:
     return 0
 
 
+# --- MCP servers ------------------------------------------------------------
+#
+# Skills are inert markdown; MCP servers are live tools the agent can call, and
+# they live in harness config rather than a skills directory. So this is an
+# opt-in subcommand, never part of `install`, and it delegates to each harness's
+# own CLI instead of editing config files: `~/.claude.json` in particular holds
+# unrelated state that a bad merge would clobber.
+
+
+@dataclass(frozen=True)
+class McpTarget:
+    name: str
+    label: str
+    binary: str
+    # Claude Code stores servers per scope; Codex has a single config file.
+    scoped: bool
+
+
+MCP_TARGETS: dict[str, McpTarget] = {
+    "claude": McpTarget("claude", "Claude Code", "claude", True),
+    "codex": McpTarget("codex", "Codex CLI", "codex", False),
+}
+
+
+def mcp_servers() -> dict[str, dict]:
+    """The servers bundled in the plugin's .mcp.json."""
+    return json.loads((plugin_root() / ".mcp.json").read_text())["mcpServers"]
+
+
+def describe_server(cfg: dict) -> str:
+    if "url" in cfg:
+        return f"hosted HTTP endpoint, {cfg['url']}"
+    argv = [cfg.get("command", "")] + list(cfg.get("args", []))
+    return f"local process, {shlex.join(a for a in argv if a)}"
+
+
+def mcp_add_command(target: McpTarget, name: str, cfg: dict, scope: str) -> list[str]:
+    if target.name == "claude":
+        return [
+            target.binary, "mcp", "add-json", name,
+            json.dumps(cfg, separators=(",", ":")), "--scope", scope,
+        ]
+    if "url" in cfg:
+        return [target.binary, "mcp", "add", name, "--url", cfg["url"]]
+    return [target.binary, "mcp", "add", name, "--", cfg["command"], *cfg.get("args", [])]
+
+
+def mcp_remove_command(target: McpTarget, name: str, scope: str) -> list[str]:
+    if target.name == "claude":
+        return [target.binary, "mcp", "remove", name, "--scope", scope]
+    return [target.binary, "mcp", "remove", name]
+
+
+def resolve_mcp_targets(args) -> list[McpTarget]:
+    if args.target:
+        wanted = [MCP_TARGETS[n] for n in dict.fromkeys(args.target)]
+    else:
+        wanted = [t for t in MCP_TARGETS.values() if shutil.which(t.binary)]
+        if not wanted:
+            print(
+                "No harness CLI found on PATH. `mcp install` drives `claude` or "
+                "`codex` directly; install one, or add the servers by hand from "
+                f"{plugin_root() / '.mcp.json'}.",
+                file=sys.stderr,
+            )
+    missing = [t for t in wanted if not shutil.which(t.binary)]
+    for t in missing:
+        print(f"{t.label}: `{t.binary}` is not on PATH; skipping.", file=sys.stderr)
+    return [t for t in wanted if t not in missing]
+
+
+def selected_servers(args) -> dict[str, dict]:
+    servers = mcp_servers()
+    if not args.server:
+        return servers
+    unknown = [n for n in args.server if n not in servers]
+    if unknown:
+        raise SystemExit(
+            f"Unknown server(s): {', '.join(unknown)}. "
+            f"Available: {', '.join(sorted(servers))}"
+        )
+    return {n: servers[n] for n in args.server}
+
+
+def run_mcp(commands: list[list[str]], dry_run: bool) -> int:
+    failures = 0
+    for cmd in commands:
+        if dry_run:
+            print(f"  {shlex.join(cmd)}")
+            continue
+        result = subprocess.run(cmd, text=True, capture_output=True)
+        if result.returncode == 0:
+            print(f"  ok   {cmd[3] if len(cmd) > 3 else ''}")
+        else:
+            failures += 1
+            detail = (result.stderr or result.stdout or "").strip().splitlines()
+            print(f"  FAIL {shlex.join(cmd)}")
+            if detail:
+                print(f"       {detail[-1]}")
+    return failures
+
+
+def cmd_mcp_list(args) -> int:
+    for name, cfg in mcp_servers().items():
+        print(f"{name}\t{describe_server(cfg)}")
+    return 0
+
+
+def cmd_mcp_install(args) -> int:
+    servers = selected_servers(args)
+    targets = resolve_mcp_targets(args)
+    if not targets:
+        return 1
+
+    print("Adding these MCP servers — they are tools the agent can call:")
+    for name, cfg in servers.items():
+        print(f"  {name}: {describe_server(cfg)}")
+    print()
+
+    failures = 0
+    for target in targets:
+        scope = args.scope if target.scoped else "(single config)"
+        print(f"{target.label} [{scope}]")
+        if not target.scoped and args.scope != "user":
+            print(
+                f"  note: {target.label} has one config file; --scope is ignored.",
+                file=sys.stderr,
+            )
+        commands = []
+        for name, cfg in servers.items():
+            if args.force:
+                commands.append(mcp_remove_command(target, name, args.scope))
+            commands.append(mcp_add_command(target, name, cfg, args.scope))
+        failures += run_mcp(commands, args.dry_run)
+
+    if args.dry_run:
+        print("\nDry run: nothing was changed.")
+    elif failures:
+        print(
+            "\nSome servers were not added. A server of the same name already "
+            "configured is the usual cause — re-run with --force to replace it.",
+            file=sys.stderr,
+        )
+        return 1
+    else:
+        print(
+            "\nNote: flyte-cluster needs `uv` and a Flyte login before it will "
+            "connect."
+        )
+    return 0
+
+
+def cmd_mcp_uninstall(args) -> int:
+    servers = selected_servers(args)
+    targets = resolve_mcp_targets(args)
+    if not targets:
+        return 1
+    for target in targets:
+        print(target.label)
+        run_mcp(
+            [mcp_remove_command(target, name, args.scope) for name in servers],
+            args.dry_run,
+        )
+    if args.dry_run:
+        print("\nDry run: nothing was changed.")
+    return 0
+
+
 def cmd_list(args) -> int:
     for src in skill_dirs():
         print(src.name)
@@ -256,6 +426,46 @@ def build_parser(prog: str) -> argparse.ArgumentParser:
 
     p = sub.add_parser("version", help="Print the plugin version.")
     p.set_defaults(func=cmd_version)
+
+    mcp = sub.add_parser("mcp", help="Manage the bundled MCP servers.")
+    mcp_sub = mcp.add_subparsers(dest="mcp_command", required=True)
+
+    p = mcp_sub.add_parser("list", help="List the bundled MCP servers.")
+    p.set_defaults(func=cmd_mcp_list)
+
+    for action, handler, blurb in (
+        ("install", cmd_mcp_install, "Add the bundled MCP servers to a harness."),
+        ("uninstall", cmd_mcp_uninstall, "Remove them again."),
+    ):
+        p = mcp_sub.add_parser(action, help=blurb)
+        p.add_argument(
+            "--target",
+            action="append",
+            choices=sorted(MCP_TARGETS),
+            help=(
+                "Harness to configure (repeatable). Default: whichever of these "
+                "CLIs is on PATH."
+            ),
+        )
+        p.add_argument(
+            "--server",
+            action="append",
+            help="Only this server (repeatable). Default: all of them.",
+        )
+        p.add_argument(
+            "--scope",
+            default="user",
+            choices=["local", "project", "user"],
+            help="Claude Code config scope (default: user). Ignored by Codex.",
+        )
+        p.add_argument("--dry-run", action="store_true", help="Print the commands only.")
+        if action == "install":
+            p.add_argument(
+                "--force",
+                action="store_true",
+                help="Remove an existing server of the same name first.",
+            )
+        p.set_defaults(func=handler)
 
     return parser
 

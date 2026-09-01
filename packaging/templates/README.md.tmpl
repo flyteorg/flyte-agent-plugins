@@ -63,9 +63,22 @@ skills into each one's skills directory:
 {{DIST}} path                                     # print the bundled plugin root
 ```
 
-The MCP servers are **not** installed by the CLI — only the skills are. Harnesses
-that consume the whole plugin (Claude Code, Codex) pick the servers up from
-`.mcp.json` automatically.
+`{{DIST}} install` writes skills only. `{{DIST}} mcp install` adds the two bundled
+MCP servers as well, by driving `claude mcp add-json` / `codex mcp add` rather than
+editing config files — so it needs one of those CLIs on your PATH:
+
+```bash
+{{DIST}} mcp list                     # what would be added
+{{DIST}} mcp install --dry-run        # print the commands, change nothing
+{{DIST}} mcp install                  # add them
+{{DIST}} mcp uninstall                # remove them again
+```
+
+These are tools the agent can call, not inert markdown: `flyte-docs` sends search
+queries to a Union-operated endpoint, and `flyte-cluster` gets control-plane access
+to your cluster (which also needs `uv` and a Flyte login). Harnesses that consume
+the whole plugin (Claude Code, Codex) pick the servers up from `.mcp.json`
+automatically and need none of this.
 
 ## Native install paths
 
