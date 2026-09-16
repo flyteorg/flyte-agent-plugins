@@ -1,0 +1,5 @@
+id: flyte-deploy-aws-core-static
+skill: flyte-deploy-aws-core
+tier: static
+# Static tier lints the SKILL.md itself (frontmatter, code fences, no secrets).
+# No agent, no LLM. Runs on every change.
