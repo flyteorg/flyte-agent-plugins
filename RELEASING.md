@@ -61,8 +61,8 @@ its `id-token: write` permission.
       git checkout main && git pull origin main && git status
       ```
 
-- [ ] Set the version everywhere (plugin manifest, Codex manifest, root
-      `package.json`):
+- [ ] Set the version everywhere (plugin manifest, Codex and Antigravity
+      manifests, root `package.json`):
 
       ```bash
       python packaging/set_version.py 0.4.0

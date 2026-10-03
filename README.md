@@ -135,31 +135,20 @@ path expanded, so `${CLAUDE_PLUGIN_ROOT}` — which Codex does not expand,
 
 ### Google Antigravity
 
-Antigravity's docs don't describe adding a third-party marketplace, so install the plugin
-from a local checkout. `plugins/flyte/` is an Antigravity plugin as-is — it carries the
-`plugin.json` marker Antigravity looks for at the plugin root:
+Install the plugin from PyPI — the skills and both MCP servers come with it:
 
 ```
-git clone https://github.com/flyteorg/flyte-agent-plugins.git   # add --branch <tag> to pin
+agy plugin install "$(uvx flyte-agent-plugins path)"
+```
+
+Or from a clone of this repo:
+
+```
+git clone https://github.com/flyteorg/flyte-agent-plugins.git
 agy plugin install ./flyte-agent-plugins/plugins/flyte
 ```
 
-`/plugin install <path>` inside an Antigravity session does the same. The install copies
-the plugin into `~/.gemini/config/plugins/flyte/`, so the clone can go afterwards — and to
-update, pull (or check out a newer tag) and run `agy plugin install` again. `agy plugin list`,
-`agy plugin disable flyte`, and `agy plugin uninstall flyte` manage it afterwards.
-
-Antigravity namespaces plugin MCP servers by plugin name, so they appear as
-`flyte_flyte-docs` and `flyte_flyte-cluster`. They don't show up in `agy mcp list`, which
-lists only servers configured outside a plugin. When changing either manifest,
-`agy plugin validate ./plugins/flyte` checks the plugin without installing it.
-
-Both MCP servers come with it, but from `plugins/flyte/mcp_config.json` rather than
-`.mcp.json`: Antigravity reads that file name, and it rejects the `url`/`type` fields on
-remote servers in favour of `serverUrl`. The two files otherwise declare the same servers,
-and `packaging/verify.py` fails if they drift. Antigravity's `plugin.json` carries only
-`name` and `description` — the fields its documented schema defines — so the release
-version still lives in `.claude-plugin/plugin.json`.
+To update, run the install again. `agy plugin uninstall flyte` removes it.
 
 ## Harness-native installs
 
@@ -177,11 +166,6 @@ rather than all 21.
 | Hermes | per-skill | none — add manually | `--target hermes` |
 | opencode | all 21 | none — add manually | `--target opencode` |
 | pi | all 21 | none — add manually | `--target pi` |
-
-Antigravity reads `<workspace>/.agents/skills/`, which is why its row needs `--project`.
-Its global skills directory is not `~/.agents/skills/` — it is `~/.gemini/config/skills/`
-for the app and IDE, `~/.gemini/antigravity-cli/skills/` for `agy` — so for a skills-only
-global install pass that directory with `--dir`, or install the plugin instead.
 
 ### Hermes
 
