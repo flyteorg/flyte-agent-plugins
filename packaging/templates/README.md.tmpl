@@ -76,6 +76,13 @@ editing config files — so it needs one of those CLIs on your PATH:
 {{DIST}} mcp uninstall                # remove them again
 ```
 
+For Google Antigravity, install the whole plugin — skills and both servers — straight
+from this package:
+
+```bash
+agy plugin install "$({{DIST}} path)"
+```
+
 These are tools the agent can call, not inert markdown: `flyte-docs` sends search
 queries to a Union-operated endpoint, and `flyte-cluster` gets control-plane access
 to your cluster (which also needs `uv` and a Flyte login). Harnesses that consume
