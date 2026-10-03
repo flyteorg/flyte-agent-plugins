@@ -182,6 +182,8 @@ git clone https://github.com/flyteorg/flyte-agent-plugins.git   # add --branch <
 agy plugin install ./flyte-agent-plugins/plugins/flyte
 ```
 
+The install is a copy, so re-run it after pulling to update.
+
 ## Install (other agent harnesses)
 
 The skills are standard [Agent Skills](https://agentskills.io) (`SKILL.md`), so they also

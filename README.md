@@ -144,8 +144,15 @@ git clone https://github.com/flyteorg/flyte-agent-plugins.git   # add --branch <
 agy plugin install ./flyte-agent-plugins/plugins/flyte
 ```
 
-`/plugin install <path>` inside an Antigravity session does the same. `agy plugin list`,
+`/plugin install <path>` inside an Antigravity session does the same. The install copies
+the plugin into `~/.gemini/config/plugins/flyte/`, so the clone can go afterwards — and to
+update, pull (or check out a newer tag) and run `agy plugin install` again. `agy plugin list`,
 `agy plugin disable flyte`, and `agy plugin uninstall flyte` manage it afterwards.
+
+Antigravity namespaces plugin MCP servers by plugin name, so they appear as
+`flyte_flyte-docs` and `flyte_flyte-cluster`. They don't show up in `agy mcp list`, which
+lists only servers configured outside a plugin. When changing either manifest,
+`agy plugin validate ./plugins/flyte` checks the plugin without installing it.
 
 Both MCP servers come with it, but from `plugins/flyte/mcp_config.json` rather than
 `.mcp.json`: Antigravity reads that file name, and it rejects the `url`/`type` fields on
