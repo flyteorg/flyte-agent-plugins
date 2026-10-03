@@ -146,8 +146,16 @@ git clone https://github.com/flyteorg/flyte-agent-plugins.git   # add --branch <
 agy plugin install ./flyte-agent-plugins/plugins/flyte
 ```
 
-This copies the plugin into `~/.gemini/config/plugins/flyte/`, so the clone can go
-afterwards; to update, pull (or check out a newer tag) and run `agy plugin install` again.
+Or skip git and install from PyPI — the `flyte-agent-plugins` package carries the same
+plugin directory, and `path` prints where it is:
+
+```
+agy plugin install "$(uvx flyte-agent-plugins path)"    # flyte-agent-plugins==<version> to pin
+```
+
+Either way this copies the plugin into `~/.gemini/config/plugins/flyte/`, so the clone (or
+uv's cache) can go afterwards; to update, run the install again from a newer checkout or
+release.
 `agy plugin list`, `agy plugin disable flyte`, and `agy plugin uninstall flyte` manage it.
 
 **Track a checkout.** Point a `plugins.json` at the repo's `plugins/` directory and
