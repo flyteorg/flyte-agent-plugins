@@ -135,65 +135,20 @@ path expanded, so `${CLAUDE_PLUGIN_ROOT}` — which Codex does not expand,
 
 ### Google Antigravity
 
-`plugins/flyte/` is an Antigravity plugin as-is — it carries the `plugin.json` marker
-Antigravity looks for at the plugin root, and both MCP servers come with it. Antigravity
-can load it three ways; pick by how you want updates to reach you.
-
-**Install a copy.** Simplest, and what `/plugin install <path>` inside a session does too:
+Install the plugin from PyPI — the skills and both MCP servers come with it:
 
 ```
-git clone https://github.com/flyteorg/flyte-agent-plugins.git   # add --branch <tag> to pin
+agy plugin install "$(uvx flyte-agent-plugins path)"
+```
+
+Or from a clone of this repo:
+
+```
+git clone https://github.com/flyteorg/flyte-agent-plugins.git
 agy plugin install ./flyte-agent-plugins/plugins/flyte
 ```
 
-Or skip git and install from PyPI — the `flyte-agent-plugins` package carries the same
-plugin directory, and `path` prints where it is:
-
-```
-agy plugin install "$(uvx flyte-agent-plugins path)"    # flyte-agent-plugins==<version> to pin
-```
-
-Either way this copies the plugin into `~/.gemini/config/plugins/flyte/`, so the clone (or
-uv's cache) can go afterwards; to update, run the install again from a newer checkout or
-release.
-`agy plugin list`, `agy plugin disable flyte`, and `agy plugin uninstall flyte` manage it.
-
-**Track a checkout.** Point a `plugins.json` at the repo's `plugins/` directory and
-Antigravity loads the plugin in place — `git pull` is the update, nothing is copied:
-
-```json
-// ~/.gemini/config/plugins.json — every session on this machine
-{ "entries": [ { "path": "/path/to/flyte-agent-plugins/plugins" } ] }
-```
-
-**Share it with a team, per repository.** The same file at `<repo>/.agents/plugins.json`
-applies to everyone who opens that repository, and a relative `path` resolves against the
-repository root — so vendor this repo (for example as a git submodule) and commit both:
-
-```
-git submodule add https://github.com/flyteorg/flyte-agent-plugins.git vendor/flyte-agent-plugins
-echo '{ "entries": [ { "path": "vendor/flyte-agent-plugins/plugins" } ] }' > .agents/plugins.json
-```
-
-Copying `plugins/flyte/` into `<repo>/.agents/plugins/flyte/` works too, at the cost of
-updating the copy by hand.
-
-**Not supported:**
-
-- `/plugin install <name>@<marketplace>` only reaches Google's Agent Marketplace, which
-  installs by an ID Google issues. There is no command to add a marketplace of your own.
-- `agy plugin import` on a Claude Code plugin produces its own Antigravity manifest from
-  `.mcp.json`, and the conversion drops the URL of a remote server — `flyte-docs`
-  silently fails to load. Use `agy plugin install` on `plugins/flyte/`, which ships a
-  correct `mcp_config.json`.
-
-Antigravity reads MCP servers from `plugins/flyte/mcp_config.json`, not `.mcp.json`: it
-requires `serverUrl` for a remote server and rejects `url`/`type`. The two files otherwise
-declare the same servers, and `packaging/verify.py` fails if they drift. Antigravity
-namespaces plugin servers by plugin name — `flyte_flyte-docs` and `flyte_flyte-cluster` —
-and they don't show up in `agy mcp list`, which lists only servers configured outside a
-plugin. When changing either manifest, `agy plugin validate ./plugins/flyte` checks the
-plugin without installing it.
+To update, run the install again. `agy plugin uninstall flyte` removes it.
 
 ## Harness-native installs
 
@@ -211,11 +166,6 @@ rather than all 21.
 | Hermes | per-skill | none — add manually | `--target hermes` |
 | opencode | all 21 | none — add manually | `--target opencode` |
 | pi | all 21 | none — add manually | `--target pi` |
-
-Antigravity reads `<workspace>/.agents/skills/`, which is why its row needs `--project`.
-Its global skills directory is not `~/.agents/skills/` — it is `~/.gemini/config/skills/`
-for the app and IDE, `~/.gemini/antigravity-cli/skills/` for `agy` — so for a skills-only
-global install pass that directory with `--dir`, or install the plugin instead.
 
 ### Hermes
 

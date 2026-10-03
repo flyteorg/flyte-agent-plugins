@@ -174,17 +174,20 @@ codex plugin marketplace add flyteorg/flyte-agent-plugins    # or --ref <tag-or-
 
 ## Install (Google Antigravity)
 
-Install from a local checkout — this directory carries the `plugin.json` marker
-Antigravity looks for, and the skills and both MCP servers come with it:
+Install the plugin from PyPI — the skills and both MCP servers come with it:
 
 ```
-git clone https://github.com/flyteorg/flyte-agent-plugins.git   # add --branch <tag> to pin
+agy plugin install "$(uvx flyte-agent-plugins path)"
+```
+
+Or from a clone of this repo:
+
+```
+git clone https://github.com/flyteorg/flyte-agent-plugins.git
 agy plugin install ./flyte-agent-plugins/plugins/flyte
 ```
 
-The install is a copy, so re-run it after pulling to update. To load it in place from a
-checkout instead — globally, or committed per repository for a team — use a `plugins.json`;
-see the [repository README](../../README.md#google-antigravity).
+To update, run the install again. `agy plugin uninstall flyte` removes it.
 
 ## Install (other agent harnesses)
 
