@@ -3,7 +3,8 @@
 A single plugin for [Flyte](https://flyte.org): cluster deployment and SDK / workflow
 authoring skills, plus two bundled MCP servers.
 [Claude Code](https://docs.claude.com/en/docs/claude-code) and
-[OpenAI Codex](https://developers.openai.com/plugins) install it as a full plugin — skills
+[OpenAI Codex](https://developers.openai.com/plugins), and
+[Google Antigravity](https://antigravity.google) install it as a full plugin — skills
 **and** MCP servers — and any harness that supports
 [Agent Skills](https://agentskills.io) (Hermes, opencode, pi) can install the skills.
 
@@ -67,9 +68,11 @@ Convert existing Flyte 1 (`flytekit`) code to Flyte 2, distilled from the offici
 ## Bundled MCP servers
 
 The servers live in `.mcp.json`. Claude Code reads that file by convention; Codex picks it
-up through the `mcpServers` entry in `.codex-plugin/plugin.json`. Hermes, opencode, and pi
-install the skills and nothing else — they all support MCP, so you can add these by hand,
-see [Adding the MCP servers elsewhere](../../README.md#adding-the-mcp-servers-elsewhere).
+up through the `mcpServers` entry in `.codex-plugin/plugin.json`; Antigravity reads the same
+servers from `mcp_config.json`, which uses its `serverUrl` field for the remote one.
+Hermes, opencode, and pi install the skills and nothing else — they all support MCP, so you
+can add these by hand, see
+[Adding the MCP servers elsewhere](../../README.md#adding-the-mcp-servers-elsewhere).
 
 `.mcp.json` declares **two MCP servers**, split so nothing is duplicated:
 
@@ -168,6 +171,18 @@ MCP servers come with it:
 ```
 codex plugin marketplace add flyteorg/flyte-agent-plugins    # or --ref <tag-or-branch> to pin
 ```
+
+## Install (Google Antigravity)
+
+Install from a local checkout — this directory carries the `plugin.json` marker
+Antigravity looks for, and the skills and both MCP servers come with it:
+
+```
+git clone https://github.com/flyteorg/flyte-agent-plugins.git   # add --branch <tag> to pin
+agy plugin install ./flyte-agent-plugins/plugins/flyte
+```
+
+The install is a copy, so re-run it after pulling to update.
 
 ## Install (other agent harnesses)
 

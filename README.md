@@ -2,8 +2,9 @@
 
 A plugin marketplace for working with [Flyte](https://flyte.org) — in
 [Claude Code](https://docs.claude.com/en/docs/claude-code),
-[OpenAI Codex](https://developers.openai.com/plugins), or any agent harness that
-supports [Agent Skills](https://agentskills.io).
+[OpenAI Codex](https://developers.openai.com/plugins),
+[Google Antigravity](https://antigravity.google), or any agent harness that supports
+[Agent Skills](https://agentskills.io).
 
 21 skills, plus two **MCP servers** that let Claude search Flyte docs and act on your own
 cluster. `uvx flyte-skills install` gets you the skills in any harness;
@@ -46,7 +47,7 @@ uvx flyte-skills list                                     # list the bundled ski
 > [!NOTE]
 > **This installs the skills, not the MCP servers.** The two servers that let Claude search
 > Flyte docs and act on your cluster ship with the **plugin**, not the CLI — see
-> [Install as a plugin](#install-as-a-plugin-claude-code-and-codex) if you want them, or
+> [Install as a plugin](#install-as-a-plugin-claude-code-codex-and-antigravity) if you want them, or
 > [Adding the MCP servers elsewhere](#adding-the-mcp-servers-elsewhere) to wire them up by
 > hand.
 
@@ -85,7 +86,7 @@ every `install` command above works under either name. They differ in one thing:
 servers too. To pin a version,
 `uvx --from flyte-skills==<version> flyte-skills install`.
 
-## Install as a plugin (Claude Code and Codex)
+## Install as a plugin (Claude Code, Codex, and Antigravity)
 
 Installing the plugin instead of the skills gets you the same 21 skills **plus** both MCP
 servers, which are declared in `plugins/flyte/.mcp.json`.
@@ -132,11 +133,39 @@ the `mcp_servers` the Codex docs show — the manifest struct is `camelCase`,
 path expanded, so `${CLAUDE_PLUGIN_ROOT}` — which Codex does not expand,
 [openai/codex#22842](https://github.com/openai/codex/issues/22842) — never comes up.
 
+### Google Antigravity
+
+Antigravity's docs don't describe adding a third-party marketplace, so install the plugin
+from a local checkout. `plugins/flyte/` is an Antigravity plugin as-is — it carries the
+`plugin.json` marker Antigravity looks for at the plugin root:
+
+```
+git clone https://github.com/flyteorg/flyte-agent-plugins.git   # add --branch <tag> to pin
+agy plugin install ./flyte-agent-plugins/plugins/flyte
+```
+
+`/plugin install <path>` inside an Antigravity session does the same. The install copies
+the plugin into `~/.gemini/config/plugins/flyte/`, so the clone can go afterwards — and to
+update, pull (or check out a newer tag) and run `agy plugin install` again. `agy plugin list`,
+`agy plugin disable flyte`, and `agy plugin uninstall flyte` manage it afterwards.
+
+Antigravity namespaces plugin MCP servers by plugin name, so they appear as
+`flyte_flyte-docs` and `flyte_flyte-cluster`. They don't show up in `agy mcp list`, which
+lists only servers configured outside a plugin. When changing either manifest,
+`agy plugin validate ./plugins/flyte` checks the plugin without installing it.
+
+Both MCP servers come with it, but from `plugins/flyte/mcp_config.json` rather than
+`.mcp.json`: Antigravity reads that file name, and it rejects the `url`/`type` fields on
+remote servers in favour of `serverUrl`. The two files otherwise declare the same servers,
+and `packaging/verify.py` fails if they drift. Antigravity's `plugin.json` carries only
+`name` and `description` — the fields its documented schema defines — so the release
+version still lives in `.claude-plugin/plugin.json`.
+
 ## Harness-native installs
 
 The skills are plain [Agent Skills](https://agentskills.io) (`SKILL.md` + YAML
 frontmatter), so they work in any harness that supports the standard. `flyte-agent-plugins
-install` above covers all five; each harness also has its own installer, which is what you
+install` above covers all of them; each harness also has its own installer, which is what you
 want when you would rather track the repo than a release, or to install a single skill
 rather than all 21.
 
@@ -144,9 +173,15 @@ rather than all 21.
 |---|---|---|---|
 | Claude Code | all 21 | both, automatically | `--target claude` |
 | Codex CLI | all 21 | both, automatically | `--target agents` |
+| Antigravity | all 21 | both, via the plugin | `--target agents --project` |
 | Hermes | per-skill | none — add manually | `--target hermes` |
 | opencode | all 21 | none — add manually | `--target opencode` |
 | pi | all 21 | none — add manually | `--target pi` |
+
+Antigravity reads `<workspace>/.agents/skills/`, which is why its row needs `--project`.
+Its global skills directory is not `~/.agents/skills/` — it is `~/.gemini/config/skills/`
+for the app and IDE, `~/.gemini/antigravity-cli/skills/` for `agy` — so for a skills-only
+global install pass that directory with `--dir`, or install the plugin instead.
 
 ### Hermes
 
@@ -292,7 +327,7 @@ the plugin [README](plugins/flyte/README.md).
 ### Adding the MCP servers elsewhere
 
 Hermes, opencode, and pi all support MCP — this plugin just doesn't configure it for them.
-(Claude Code and Codex get both servers from the plugin; use these snippets only if you
+(Claude Code, Codex, and Antigravity get both servers from the plugin; use these snippets only if you
 want them configured globally rather than per-plugin.) Wiring it up yourself is a few
 lines.
 
@@ -368,19 +403,22 @@ package.json                                # pi package manifest (pi.skills)
 plugins/flyte/.claude-plugin/plugin.json    # Claude Code plugin manifest
 plugins/flyte/.codex-plugin/plugin.json     # Codex plugin manifest (points at .mcp.json)
 plugins/flyte/.mcp.json                     # the two bundled MCP servers
+plugins/flyte/plugin.json                   # Antigravity plugin manifest
+plugins/flyte/mcp_config.json               # the same servers, in Antigravity's schema
 plugins/flyte/skills/<skill>/SKILL.md
 packaging/build.py                          # fans plugins/flyte out into the npm + PyPI packages
 packaging/verify.py                         # builds every distribution and proves it installs
 scripts/smoke_test_mcp.py                   # end-to-end check of the local MCP server
 ```
 
-Each harness consumes a different part of this. Claude Code and Codex read the plugin
-manifests, so the **plugin name** matters to them. Hermes, opencode, and pi install skills
+Each harness consumes a different part of this. Claude Code, Codex, and Antigravity read
+the plugin manifests, so the **plugin name** matters to them. Hermes, opencode, and pi install skills
 by **directory path**, so `plugins/flyte/skills/…` is their interface.
 
 `.mcp.json` is shared by Claude Code (which finds it by convention) and Codex (which is
-pointed at it by `.codex-plugin/plugin.json`); the skills themselves stay portable across
-every harness.
+pointed at it by `.codex-plugin/plugin.json`). Antigravity needs its own copy in
+`mcp_config.json`, kept in step by `packaging/verify.py`; the skills themselves stay
+portable across every harness.
 
 The PyPI packages are a fourth consumer: `packaging/build.py` vendors the whole
 `plugins/flyte/` tree into each one, which is how `flyte-agent-plugins install` can write the
