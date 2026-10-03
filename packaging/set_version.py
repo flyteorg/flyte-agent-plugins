@@ -4,8 +4,8 @@
     python packaging/set_version.py 0.4.0
 
 The plugin manifest at plugins/flyte/.claude-plugin/plugin.json is the source of
-truth that packaging/build.py reads; the Codex manifest and the repo-root
-package.json must agree with it, so this writes all three at once.
+truth that packaging/build.py reads; the Codex and Antigravity manifests and the
+repo-root package.json must agree with it, so this writes all four at once.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ REPO = Path(__file__).resolve().parent.parent
 MANIFESTS = [
     REPO / "plugins" / "flyte" / ".claude-plugin" / "plugin.json",
     REPO / "plugins" / "flyte" / ".codex-plugin" / "plugin.json",
+    REPO / "plugins" / "flyte" / "plugin.json",
     REPO / "package.json",
 ]
 

@@ -53,6 +53,7 @@ def check_versions() -> None:
     for path in (
         REPO / "plugins/flyte/.claude-plugin/plugin.json",
         REPO / "plugins/flyte/.codex-plugin/plugin.json",
+        REPO / "plugins/flyte/plugin.json",
         REPO / "package.json",
     ):
         versions[path.relative_to(REPO).as_posix()] = json.loads(path.read_text())["version"]
@@ -71,8 +72,10 @@ def check_antigravity() -> None:
     plugin = builder.PLUGIN_SRC
     claude = json.loads((plugin / ".claude-plugin" / "plugin.json").read_text())
     manifest = json.loads((plugin / "plugin.json").read_text())
+    # The version is compared with every other manifest in check_versions().
     check(
-        manifest == {"name": claude["name"], "description": claude["description"]},
+        {k: manifest.get(k) for k in ("name", "description")}
+        == {"name": claude["name"], "description": claude["description"]},
         "plugin.json carries the Claude Code manifest's name and description",
     )
 

@@ -182,7 +182,9 @@ git clone https://github.com/flyteorg/flyte-agent-plugins.git   # add --branch <
 agy plugin install ./flyte-agent-plugins/plugins/flyte
 ```
 
-The install is a copy, so re-run it after pulling to update.
+The install is a copy, so re-run it after pulling to update. To load it in place from a
+checkout instead — globally, or committed per repository for a team — use a `plugins.json`;
+see the [repository README](../../README.md#google-antigravity).
 
 ## Install (other agent harnesses)
 
