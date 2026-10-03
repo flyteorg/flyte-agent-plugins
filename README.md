@@ -135,31 +135,57 @@ path expanded, so `${CLAUDE_PLUGIN_ROOT}` — which Codex does not expand,
 
 ### Google Antigravity
 
-Antigravity's docs don't describe adding a third-party marketplace, so install the plugin
-from a local checkout. `plugins/flyte/` is an Antigravity plugin as-is — it carries the
-`plugin.json` marker Antigravity looks for at the plugin root:
+`plugins/flyte/` is an Antigravity plugin as-is — it carries the `plugin.json` marker
+Antigravity looks for at the plugin root, and both MCP servers come with it. Antigravity
+can load it three ways; pick by how you want updates to reach you.
+
+**Install a copy.** Simplest, and what `/plugin install <path>` inside a session does too:
 
 ```
 git clone https://github.com/flyteorg/flyte-agent-plugins.git   # add --branch <tag> to pin
 agy plugin install ./flyte-agent-plugins/plugins/flyte
 ```
 
-`/plugin install <path>` inside an Antigravity session does the same. The install copies
-the plugin into `~/.gemini/config/plugins/flyte/`, so the clone can go afterwards — and to
-update, pull (or check out a newer tag) and run `agy plugin install` again. `agy plugin list`,
-`agy plugin disable flyte`, and `agy plugin uninstall flyte` manage it afterwards.
+This copies the plugin into `~/.gemini/config/plugins/flyte/`, so the clone can go
+afterwards; to update, pull (or check out a newer tag) and run `agy plugin install` again.
+`agy plugin list`, `agy plugin disable flyte`, and `agy plugin uninstall flyte` manage it.
 
-Antigravity namespaces plugin MCP servers by plugin name, so they appear as
-`flyte_flyte-docs` and `flyte_flyte-cluster`. They don't show up in `agy mcp list`, which
-lists only servers configured outside a plugin. When changing either manifest,
-`agy plugin validate ./plugins/flyte` checks the plugin without installing it.
+**Track a checkout.** Point a `plugins.json` at the repo's `plugins/` directory and
+Antigravity loads the plugin in place — `git pull` is the update, nothing is copied:
 
-Both MCP servers come with it, but from `plugins/flyte/mcp_config.json` rather than
-`.mcp.json`: Antigravity reads that file name, and it rejects the `url`/`type` fields on
-remote servers in favour of `serverUrl`. The two files otherwise declare the same servers,
-and `packaging/verify.py` fails if they drift. Antigravity's `plugin.json` carries only
-`name` and `description` — the fields its documented schema defines — so the release
-version still lives in `.claude-plugin/plugin.json`.
+```json
+// ~/.gemini/config/plugins.json — every session on this machine
+{ "entries": [ { "path": "/path/to/flyte-agent-plugins/plugins" } ] }
+```
+
+**Share it with a team, per repository.** The same file at `<repo>/.agents/plugins.json`
+applies to everyone who opens that repository, and a relative `path` resolves against the
+repository root — so vendor this repo (for example as a git submodule) and commit both:
+
+```
+git submodule add https://github.com/flyteorg/flyte-agent-plugins.git vendor/flyte-agent-plugins
+echo '{ "entries": [ { "path": "vendor/flyte-agent-plugins/plugins" } ] }' > .agents/plugins.json
+```
+
+Copying `plugins/flyte/` into `<repo>/.agents/plugins/flyte/` works too, at the cost of
+updating the copy by hand.
+
+**Not supported:**
+
+- `/plugin install <name>@<marketplace>` only reaches Google's Agent Marketplace, which
+  installs by an ID Google issues. There is no command to add a marketplace of your own.
+- `agy plugin import` on a Claude Code plugin produces its own Antigravity manifest from
+  `.mcp.json`, and the conversion drops the URL of a remote server — `flyte-docs`
+  silently fails to load. Use `agy plugin install` on `plugins/flyte/`, which ships a
+  correct `mcp_config.json`.
+
+Antigravity reads MCP servers from `plugins/flyte/mcp_config.json`, not `.mcp.json`: it
+requires `serverUrl` for a remote server and rejects `url`/`type`. The two files otherwise
+declare the same servers, and `packaging/verify.py` fails if they drift. Antigravity
+namespaces plugin servers by plugin name — `flyte_flyte-docs` and `flyte_flyte-cluster` —
+and they don't show up in `agy mcp list`, which lists only servers configured outside a
+plugin. When changing either manifest, `agy plugin validate ./plugins/flyte` checks the
+plugin without installing it.
 
 ## Harness-native installs
 
