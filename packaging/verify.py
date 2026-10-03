@@ -8,6 +8,7 @@ Run locally exactly as CI runs it:
 Checks, for both names on both registries:
   * every manifest agrees on one version;
   * every skill has frontmatter with a name matching its directory;
+  * the Antigravity manifests agree with the Claude Code ones they mirror;
   * the npm tarball carries the dot-directories Claude Code needs at the package
     root (npm's default file selection is not reliable about those);
   * the built wheel carries the skills as package data;
@@ -56,6 +57,36 @@ def check_versions() -> None:
     ):
         versions[path.relative_to(REPO).as_posix()] = json.loads(path.read_text())["version"]
     check(len(set(versions.values())) == 1, f"one version across manifests: {versions}")
+
+
+def check_antigravity() -> None:
+    """Antigravity reads its own manifest (``plugin.json``) and its own MCP config
+    (``mcp_config.json``) from the plugin root. Both are hand-maintained mirrors of
+    the Claude Code files, so drift between them is the failure to catch.
+
+    The one intended difference: Antigravity rejects ``url``/``type`` on remote
+    servers and requires ``serverUrl`` instead.
+    """
+    print("antigravity")
+    plugin = builder.PLUGIN_SRC
+    claude = json.loads((plugin / ".claude-plugin" / "plugin.json").read_text())
+    manifest = json.loads((plugin / "plugin.json").read_text())
+    check(
+        manifest == {"name": claude["name"], "description": claude["description"]},
+        "plugin.json carries the Claude Code manifest's name and description",
+    )
+
+    def as_antigravity(server: dict) -> dict:
+        if "url" not in server:
+            return server
+        return {"serverUrl": server["url"], **{k: v for k, v in server.items() if k not in ("url", "type")}}
+
+    expected = {
+        name: as_antigravity(server)
+        for name, server in json.loads((plugin / ".mcp.json").read_text())["mcpServers"].items()
+    }
+    actual = json.loads((plugin / "mcp_config.json").read_text())["mcpServers"]
+    check(actual == expected, f"mcp_config.json mirrors .mcp.json: {sorted(actual)}")
 
 
 def check_targets(workdir: Path, npm_pkg: Path, py_exe: str) -> None:
@@ -150,7 +181,14 @@ def check_npm(dist: str, pkg: Path, workdir: Path) -> None:
     print(f"npm {dist}")
     out = run(["npm", "pack", "--dry-run", "--json"], cwd=pkg).stdout
     files = {f["path"] for f in json.loads(out)[0]["files"]}
-    for required in (".claude-plugin/plugin.json", ".codex-plugin/plugin.json", ".mcp.json", "bin/cli.mjs"):
+    for required in (
+        ".claude-plugin/plugin.json",
+        ".codex-plugin/plugin.json",
+        ".mcp.json",
+        "plugin.json",
+        "mcp_config.json",
+        "bin/cli.mjs",
+    ):
         check(required in files, f"tarball contains {required}")
     packed = {f.split("/")[1] for f in files if f.startswith("skills/")}
     check(packed == set(builder.skill_names()), f"tarball contains all {len(builder.skill_names())} skills")
@@ -186,7 +224,8 @@ def check_pypi(dist: str, pkg: Path, workdir: Path) -> None:
     names = set(zipfile.ZipFile(wheel).namelist())
     mod = builder.module_name(dist)
     check(f"{mod}/plugin/.claude-plugin/plugin.json" in names, "wheel contains .claude-plugin/plugin.json")
-    check(f"{mod}/plugin/.mcp.json" in names, "wheel contains .mcp.json")
+    for required in (".mcp.json", "plugin.json", "mcp_config.json"):
+        check(f"{mod}/plugin/{required}" in names, f"wheel contains {required}")
     packed = {n.split("/")[3] for n in names if n.startswith(f"{mod}/plugin/skills/")}
     check(packed == set(builder.skill_names()), f"wheel contains all {len(builder.skill_names())} skills")
 
@@ -218,6 +257,7 @@ def check_pypi(dist: str, pkg: Path, workdir: Path) -> None:
 def main() -> int:
     check_versions()
     check_skills()
+    check_antigravity()
 
     with tempfile.TemporaryDirectory() as tmp:
         workdir = Path(tmp)

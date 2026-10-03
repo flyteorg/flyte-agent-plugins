@@ -52,6 +52,7 @@ KEYWORDS = [
     "claude-code",
     "claude-code-plugin",
     "codex",
+    "antigravity",
     "mcp",
     "workflow-orchestration",
 ]
@@ -116,11 +117,13 @@ def skill_names() -> list[str]:
 
 
 def copy_plugin(dest: Path) -> None:
-    """Copy the plugin payload (manifests + .mcp.json + skills) into dest."""
+    """Copy the plugin payload (manifests + MCP configs + skills) into dest."""
     dest.mkdir(parents=True, exist_ok=True)
     for name in (".claude-plugin", ".codex-plugin", "skills"):
         shutil.copytree(PLUGIN_SRC / name, dest / name)
-    shutil.copy2(PLUGIN_SRC / ".mcp.json", dest / ".mcp.json")
+    # Antigravity reads its manifest and MCP config from the plugin root.
+    for name in (".mcp.json", "plugin.json", "mcp_config.json"):
+        shutil.copy2(PLUGIN_SRC / name, dest / name)
 
 
 def build_npm(dist: str, ver: str, outdir: Path) -> Path:
@@ -157,6 +160,8 @@ def build_npm(dist: str, ver: str, outdir: Path) -> Path:
             ".claude-plugin/",
             ".codex-plugin/",
             ".mcp.json",
+            "plugin.json",
+            "mcp_config.json",
             "skills/",
             "bin/",
 

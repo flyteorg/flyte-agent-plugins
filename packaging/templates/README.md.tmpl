@@ -79,8 +79,8 @@ editing config files — so it needs one of those CLIs on your PATH:
 These are tools the agent can call, not inert markdown: `flyte-docs` sends search
 queries to a Union-operated endpoint, and `flyte-cluster` gets control-plane access
 to your cluster (which also needs `uv` and a Flyte login). Harnesses that consume
-the whole plugin (Claude Code, Codex) pick the servers up from `.mcp.json`
-automatically and need none of this.
+the whole plugin (Claude Code, Codex, Antigravity) pick the servers up from the
+bundled config automatically and need none of this.
 <!-- mcp-only:end -->
 
 ## Native install paths
@@ -93,8 +93,8 @@ marketplace in its own right:
 /plugin install flyte@flyte-agent-plugins
 ```
 
-See [the repository README]({{REPO_URL}}#readme) for Codex, Hermes, opencode, and
-pi instructions, the full skill list, and MCP server details.
+See [the repository README]({{REPO_URL}}#readme) for Codex, Antigravity, Hermes,
+opencode, and pi instructions, the full skill list, and MCP server details.
 
 ## License
 
