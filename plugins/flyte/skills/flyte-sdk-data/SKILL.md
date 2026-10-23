@@ -28,6 +28,7 @@ Build ETL pipelines, data processing workflows, and data quality checks with Fly
 ```python
 import flyte
 import flyte.io
+import polars as pl
 
 env = flyte.TaskEnvironment(
     name="etl-pipeline",
@@ -39,19 +40,20 @@ env = flyte.TaskEnvironment(
 @env.task(retries=3, cache="auto")
 async def extract(source_uri: str) -> flyte.io.DataFrame:
     """Extract data from various sources."""
-    import polars as pl
     if source_uri.endswith(".csv"):
         df = pl.read_csv(source_uri)
     elif source_uri.endswith(".parquet"):
         df = pl.read_parquet(source_uri)
     else:
         raise ValueError(f"Unsupported format: {source_uri}")
-    return flyte.io.DataFrame(df)
+    # Wrap a native frame rather than calling the raw constructor
+    return flyte.io.DataFrame.from_df(df)
 
 @env.task(retries=2, cache="auto")
 async def transform(df: flyte.io.DataFrame) -> flyte.io.DataFrame:
     """Clean and transform data."""
-    inner = df.to_polars()
+    # Materialize a flyte.io.DataFrame as a concrete backend before manipulating it
+    inner = await df.open(pl.DataFrame).all()
     cleaned = (
         inner
         .drop_nulls()
@@ -60,12 +62,12 @@ async def transform(df: flyte.io.DataFrame) -> flyte.io.DataFrame:
             pl.col("date").str.strptime(pl.Date, "%Y-%m-%d").alias("date_parsed"),
         ])
     )
-    return flyte.io.DataFrame(cleaned)
+    return flyte.io.DataFrame.from_df(cleaned)
 
 @env.task(retries=1, cache="auto")
 async def load(df: flyte.io.DataFrame, destination: str) -> str:
     """Load transformed data to destination."""
-    inner = df.to_polars()
+    inner = await df.open(pl.DataFrame).all()
     if destination.endswith(".parquet"):
         inner.write_parquet(destination)
     elif destination.endswith(".csv"):
@@ -91,7 +93,7 @@ async def extract_raw(source_uri: str) -> flyte.io.File:
     df = pl.read_csv(source_uri)
     path = "/tmp/raw.parquet"
     df.write_parquet(path)
-    return flyte.io.File(path=path)
+    return await flyte.io.File.from_local(path)
 
 @env.task(cache="auto")
 async def validate_raw(raw: flyte.io.File) -> dict:
@@ -110,7 +112,7 @@ async def clean(raw: flyte.io.File) -> flyte.io.File:
     cleaned = df.drop_nulls().unique()
     path = "/tmp/cleaned.parquet"
     cleaned.write_parquet(path)
-    return flyte.io.File(path=path)
+    return await flyte.io.File.from_local(path)
 
 @env.task(cache="auto")
 async def enrich(cleaned: flyte.io.File) -> flyte.io.File:
@@ -120,7 +122,7 @@ async def enrich(cleaned: flyte.io.File) -> flyte.io.File:
     ...
     path = "/tmp/enriched.parquet"
     df.write_parquet(path)
-    return flyte.io.File(path=path)
+    return await flyte.io.File.from_local(path)
 
 @env.task
 async def load_enriched(enriched: flyte.io.File, destination: str) -> str:
@@ -155,7 +157,7 @@ async def process_file(file_uri: str) -> flyte.io.DataFrame:
     import polars as pl
     df = pl.read_parquet(file_uri)
     cleaned = df.drop_nulls().unique()
-    return flyte.io.DataFrame(cleaned)
+    return flyte.io.DataFrame.from_df(cleaned)
 
 @env.task
 async def process_dataset(file_uris: list[str]) -> list:
@@ -167,8 +169,8 @@ async def process_dataset(file_uris: list[str]) -> list:
 async def merge_results(results: list) -> flyte.io.DataFrame:
     """Merge processed results into a single DataFrame."""
     import polars as pl
-    combined = pl.concat([r.to_polars() for r in results])
-    return flyte.io.DataFrame(combined)
+    combined = pl.concat([await r.open(pl.DataFrame).all() for r in results])
+    return flyte.io.DataFrame.from_df(combined)
 
 @env.task
 async def main(file_uris: list[str]) -> flyte.io.DataFrame:
@@ -184,7 +186,7 @@ async def process_file_safe(file_uri: str) -> dict:
     """Process a file with error handling."""
     try:
         df = await process_file(file_uri)
-        return {"status": "success", "file": file_uri, "rows": len(df.to_polars())}
+        return {"status": "success", "file": file_uri, "rows": len(await df.open(pl.DataFrame).all())}
     except Exception as e:
         return {"status": "error", "file": file_uri, "error": str(e)}
 
@@ -218,10 +220,12 @@ async def main(file_uris: list[str]) -> list:
 ### Comprehensive data quality
 
 ```python
+import polars as pl
+
 @env.task(cache="auto")
 async def validate_schema(df: flyte.io.DataFrame, expected_schema: dict) -> dict:
     """Validate DataFrame schema matches expected schema."""
-    inner = df.to_polars()
+    inner = await df.open(pl.DataFrame).all()
     checks = {}
 
     # Column names
@@ -246,7 +250,7 @@ async def validate_schema(df: flyte.io.DataFrame, expected_schema: dict) -> dict
 @env.task(cache="auto")
 async def validate_nulls(df: flyte.io.DataFrame, max_null_pct: float = 0.1) -> dict:
     """Validate null percentages per column."""
-    inner = df.to_polars()
+    inner = await df.open(pl.DataFrame).all()
     row_count = len(inner)
     checks = {}
 
@@ -264,7 +268,7 @@ async def validate_nulls(df: flyte.io.DataFrame, max_null_pct: float = 0.1) -> d
 @env.task(cache="auto")
 async def validate_values(df: flyte.io.DataFrame, constraints: dict) -> dict:
     """Validate value constraints (ranges, enums, patterns)."""
-    inner = df.to_polars()
+    inner = await df.open(pl.DataFrame).all()
     checks = {}
 
     for col, constraint in constraints.items():
@@ -310,10 +314,12 @@ async def data_quality_gate(
 ### Data quality with custom checks
 
 ```python
+import polars as pl
+
 @env.task(cache="auto")
 async def check_distribution(df: flyte.io.DataFrame, column: str, expected_stats: dict) -> dict:
     """Check if data distribution matches expected statistics."""
-    inner = df.to_polars()
+    inner = await df.open(pl.DataFrame).all()
     col_data = inner[column].drop_nulls()
 
     actual_mean = col_data.mean()
@@ -356,7 +362,7 @@ async def process_file(file_uri: str) -> flyte.io.File:
     cleaned = df.drop_nulls()
     path = f"/tmp/cleaned_{file_uri.split('/')[-1]}"
     cleaned.write_parquet(path)
-    return flyte.io.File(path=path)
+    return await flyte.io.File.from_local(path)
 
 @env.task
 async def merge_files(files: list[flyte.io.File]) -> flyte.io.File:
@@ -366,7 +372,7 @@ async def merge_files(files: list[flyte.io.File]) -> flyte.io.File:
     combined = pl.concat(dfs)
     path = "/tmp/merged.parquet"
     combined.write_parquet(path)
-    return flyte.io.File(path=path)
+    return await flyte.io.File.from_local(path)
 
 @env.task
 async def dynamic_etl(prefix: str, destination: str) -> dict:
@@ -413,33 +419,26 @@ async def conditional_pipeline(df: flyte.io.DataFrame, threshold: float) -> dict
 
 ## JsonlFile and JsonlDir for Large Datasets
 
-### JsonlFile — streaming JSONL
+The `JsonlFile` and `JsonlDir` types stream records one at a time, so you can process line-delimited data that does not fit in memory. They come from the **`flyteplugins-jsonl`** plugin (which must be in the image) and extend the built-in `flyte.io.File` / `flyte.io.Dir`, inheriting remote storage and caching. Every method has a `_sync` counterpart.
 
 ```python
+# Streaming writer to remote object storage
 @env.task
-async def process_jsonl(path: str) -> int:
-    """Process a JSONL file with streaming."""
-    from flyte.extend import JsonlFile
-    jf = JsonlFile(path)
+async def write_records() -> None:
+    from flyteplugins.jsonl import JsonlFile
+    out = JsonlFile.new_remote("results.jsonl")
+    async with out.writer() as w:
+        await w.write({"id": 1})         # also write_many(), write_raw(), flush()
+
+# Streaming read of a sharded JSONL directory
+@env.task
+async def read_jsonl_dir(d: flyte.io.Dir) -> int:
+    from flyteplugins.jsonl import JsonlDir
+    jd = JsonlDir(d)
     count = 0
-    async for record in jf.stream():
-        process(record)
+    async for rec in jd.iter_records():
         count += 1
     return count
-```
-
-### JsonlDir — batched JSONL directories
-
-```python
-@env.task
-async def process_jsonl_dir(dir_path: str) -> dict:
-    """Process JSONL directory with batched streaming."""
-    from flyte.extend import JsonlDir
-    jd = JsonlDir(dir_path)
-    total = 0
-    async for batch in jd.stream_batches():
-        total += len(batch)
-    return {"records": total}
 ```
 
 ## Data Format Reference
@@ -469,5 +468,6 @@ async def process_jsonl_dir(dir_path: str) -> dict:
 
 1. **Don't load entire datasets into memory** — use streaming (`JsonlFile`, Polars lazy) for large data.
 2. **Don't pass DataFrames inline** — they go by reference automatically, but small dicts do go inline.
-3. **Don't skip data quality gates** — always validate before and after transforms.
-4. **Don't use Union-only features** — avoid `ReusePolicy` and other Union-specific APIs.
+3. **Don't use `.to_polars()` / raw `DataFrame(...)` constructors** — wrap with `flyte.io.DataFrame.from_df(...)` and materialize with `await df.open(pl.DataFrame).all()`; create files with `File.from_local(...)` / `File.new_remote()` (the raw `File(path=...)` constructor is only for existing remote refs).
+4. **Don't skip data quality gates** — always validate before and after transforms.
+5. **Don't use Union-only features** — avoid `ReusePolicy` and other Union-specific APIs.

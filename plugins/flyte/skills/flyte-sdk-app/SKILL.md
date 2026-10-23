@@ -27,7 +27,11 @@ Build and serve applications with Flyte 2.
 | `StreamlitAppEnvironment` | Dashboards, data apps | `from flyte.app.extras import StreamlitAppEnvironment` |
 | `vLLMAppEnvironment` | LLM serving | `from flyte.app.extras import vLLMAppEnvironment` |
 | `SGLangAppEnvironment` | Structured generation | `from flyte.app.extras import SGLangAppEnvironment` |
+| `FlyteWebhookAppEnvironment` | Pre-built control-plane webhook | `from flyte.app.extras import FlyteWebhookAppEnvironment` |
+| Ollama (no plugin) | Lightweight local-style LLM serving | generic `flyte.app.AppEnvironment` + entrypoint |
 | Custom (`AppEnvironment`) | Any HTTP server | `import flyte` |
+
+> [!NOTE] **Ollama has no dedicated `*AppEnvironment`.** vLLM and SGLang ship plugins; Ollama is served with the generic `AppEnvironment` plus a small entrypoint that launches `ollama serve` and pulls the model on startup.
 
 ## FastAPI App — Model Serving
 
@@ -458,6 +462,68 @@ if __name__ == "__main__":
     flyte.init_from_config()
     flyte.serve(env)
 ```
+
+## Ollama App
+
+Ollama serves open models locally with an OpenAI-compatible API. Because there is no dedicated plugin, build a generic `AppEnvironment` whose image installs Ollama and whose `args` run a `--server` entrypoint that starts `ollama serve` and pulls the model on startup:
+
+```python
+import os
+import subprocess
+import sys
+import flyte
+
+MODEL = "llama3.2"
+PORT = 11434
+
+image = (
+    flyte.Image.from_debian_base()
+    .with_commands(["curl -fsSL https://ollama.com/install.sh | sh"])
+)
+
+ollama_app = flyte.app.AppEnvironment(
+    name="ollama-app",
+    image=image,
+    args=["python", __file__, "--server"],
+    port=PORT,
+    resources=flyte.Resources(cpu="4", memory="16Gi", gpu="L40s:1", disk="20Gi"),  # GPU optional
+    scaling=flyte.app.Scaling(replicas=(0, 1), scaledown_after=300),
+    requires_auth=False,
+)
+
+def serve() -> None:
+    server = subprocess.Popen(["ollama", "serve"], env={**os.environ, "OLLAMA_HOST": f"0.0.0.0:{PORT}"})
+    subprocess.run(["ollama", "pull", MODEL], check=True)
+    server.wait()
+
+if __name__ == "__main__":
+    if "--server" in sys.argv:
+        serve()
+    else:
+        flyte.init_from_config()
+        flyte.serve(ollama_app)
+```
+
+## Native Webhook App (FlyteWebhookAppEnvironment)
+
+`FlyteWebhookAppEnvironment` is a pre-built `FastAPIAppEnvironment` that exposes HTTP endpoints for common Flyte control-plane operations — no hand-written routes needed. Endpoints: `core` (`/health`, `/me`), `task` (`POST /run-task/...`), `run` (`GET /run/{name}`, `POST /run/{name}/abort`), `app` (activate/deactivate/call), `trigger`, `build`, and `prefetch`. Select the surface you need:
+
+```python
+import flyte
+import flyte.app
+from flyte.app.extras import FlyteWebhookAppEnvironment
+
+webhook_env = FlyteWebhookAppEnvironment(
+    name="my-webhook",
+    title="My Flyte Webhook",
+    endpoint_groups=["core", "task", "run"],          # or `endpoints=[...]` for individual routes
+    task_allowlist=["prod/my-project/allowed-task"],   # optional restrictive allowlist
+    resources=flyte.Resources(cpu=1, memory="512Mi"),
+    requires_auth=True,
+)
+```
+
+For a bespoke webhook that triggers tasks with your own auth and validation, use `FastAPIAppEnvironment` directly — see the **Webhook Apps** section above.
 
 ## App Secrets
 

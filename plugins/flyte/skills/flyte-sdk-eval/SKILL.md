@@ -113,7 +113,7 @@ env = flyte.TaskEnvironment(
 async def load_test_data() -> flyte.io.DataFrame:
     """Load ground truth test data."""
     ...
-    return flyte.io.DataFrame(df)
+    return flyte.io.DataFrame.from_df(df)
 
 @env.task
 async def load_model(model_uri: str) -> object:
@@ -135,9 +135,10 @@ async def compute_metrics(
         accuracy_score, f1_score, precision_score, recall_score,
         roc_auc_score, mean_squared_error,
     )
-    y_true = ground_truth.to_polars()["label"].to_list()
-    y_pred = predictions.to_polars()["prediction"].to_list()
-    y_prob = predictions.to_polars()["probability"].to_list()
+    import polars as pl
+    y_true = (await ground_truth.open(pl.DataFrame).all())["label"].to_list()
+    y_pred = (await predictions.open(pl.DataFrame).all())["prediction"].to_list()
+    y_prob = (await predictions.open(pl.DataFrame).all())["probability"].to_list()
 
     return {
         "accuracy": accuracy_score(y_true, y_pred),
@@ -155,7 +156,7 @@ async def generate_report(metrics: dict) -> flyte.io.File:
     # Confusion matrix, ROC curve, etc.
     path = "/tmp/eval_report.png"
     fig.savefig(path)
-    return flyte.io.File(path=path)
+    return await flyte.io.File.from_local(path)
 
 @env.task
 async def evaluate_pipeline(
@@ -203,7 +204,8 @@ async def compare_models(
 @env.task
 async def validate_data(df: flyte.io.DataFrame) -> dict:
     """Run data quality checks."""
-    inner = df.to_polars()
+    import polars as pl
+    inner = await df.open(pl.DataFrame).all()
     checks = {}
 
     # Row count check
@@ -295,7 +297,7 @@ async def track_experiment(
     path = f"/tmp/experiments/{experiment_name}.json"
     with open(path, "w") as f:
         json.dump(record, f, indent=2)
-    return flyte.io.File(path=path)
+    return await flyte.io.File.from_local(path)
 
 @env.task
 async def run_experiment(
@@ -424,7 +426,7 @@ tests/
 ## Anti-Patterns
 
 1. **Don't test against remote runs in unit tests** — use direct function invocation for unit tests. Reserve `flyte.run()` for integration tests.
-2. **Don't hardcode test data paths** — use `flyte.io.File(path="/tmp/test_data")` with temp directories.
+2. **Don't hardcode test data paths** — prefer `File.from_local(...)` / `File.from_existing_remote(...)` with temp directories over bare path strings.
 3. **Don't skip data quality gates** — always validate data before and after transformations.
 4. **Don't use Union-only features** — avoid `ReusePolicy` and other Union-specific APIs.
 5. **Don't test ML models with random data** — use representative test datasets that match production distribution.

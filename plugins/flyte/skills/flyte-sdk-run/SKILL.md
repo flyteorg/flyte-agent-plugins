@@ -200,30 +200,116 @@ result = flyte.run(main, inputs={"data": ["a"]})
 print(result.url)  # open the run in the UI to view logs
 ```
 
-## Re-running Runs
+## Re-running Runs (rerun)
+
+Every run is durable: its task, code, inputs, and configuration are recorded on the backend. `flyte rerun` / `flyte.rerun()` relaunches a new run from a previous one **without needing the original code checked out locally** — task and inputs are fetched from the platform.
 
 ### CLI
 
 ```bash
-# Re-run with original code and inputs
-flyte rerun <run_name> --project flytesnacks --domain development
+# Rerun with the prior run's exact code and inputs
+flyte rerun <run-name>
 
-# Re-run with new local code
-flyte run --rerun-from <run_name> pipeline.py main --data '[4,5,6]'
+# Give the new run a name and stream its parent-action logs
+flyte rerun <run-name> --name retry-1 --follow
+
+# Override an env var / set a label on the new run
+flyte rerun <run-name> -e LOG_LEVEL=20 --label team=ml
+
+# Rerun with a different input value (converted against the prior run's interface)
+flyte rerun <run-name> --threshold 0.9
 ```
+
+| Option | Description |
+|---|---|
+| `-p` / `-d` | Project / domain for the new run |
+| `--name` | Name for the new run |
+| `-e KEY=VALUE` | Override an environment variable (repeatable) |
+| `--label KEY=VALUE` | Set a label (repeatable) |
+| `-f` / `--follow` | Stream the parent action's logs after launch |
+
+> [!NOTE] `flyte rerun` is **not** `flyte run`. `flyte run <file> <task>` uses your local code and CLI inputs; `flyte rerun <run>` fetches both from the backend. To keep the successful actions of a failed run and re-execute only what failed, add `--recover` — see **Recover a failed run** below.
 
 ### Python SDK
 
 ```python
 import flyte
+flyte.init_from_config()
 
-# Re-run with new inputs
-result = flyte.run(
-    main,
-    inputs={"data": [4, 5, 6]},
-    run_context=flyte.with_runcontext(run_name="rerun-of-abc123"),
-)
+# Rerun with the prior run's exact inputs (task + inputs fetched from the platform)
+r = flyte.rerun("ul56wcvgqrb9vzhzz5l2")
+
+# Change inputs — converted against the prior run's interface
+r = flyte.rerun("ul56wcvgqrb9vzhzz5l2", x_list=[1, 2, 3])
+
+# Control launch settings with flyte.with_runcontext(...)
+flyte.with_runcontext(name="retry-1", env_vars={"LOG_LEVEL": "20"}).rerun("ul56wcvgqrb9vzhzz5l2")
 ```
+
+`flyte.rerun()` returns a `flyte.remote.Run`, so you can wait on it and read outputs exactly like `flyte.run()`.
+
+## Recover a failed run
+
+**Recovery** launches a new run that **reuses the successful actions** of a previous run and re-executes only what failed or never ran. A reused action is not executed again: its recorded output is handed to whatever consumes it. Recovery is remote-only (not supported in `--local`).
+
+Recovery differs from caching:
+
+- **Caching** is content-addressed (keyed on inputs + task version), enabled per task in code, reusable across any run.
+- **Recovery** is scoped to one named run, needs **no** task preparation in code, and is opted in per run at launch (`--recover`).
+
+### Recover from the CLI
+
+```bash
+# Reuse the prior run's succeeded actions, re-running only what failed or never ran
+flyte rerun <run-name> --recover --follow
+
+# Force specific actions to re-execute even though they succeeded
+flyte rerun <run-name> --recover --force-rerun-action a3 --force-rerun-action a7
+
+# Re-run a single action on its own, rooted at its task with its recorded inputs
+flyte rerun <run-name> --action-name a3
+
+# Proceed even if the source run's outputs were cleaned up from storage
+flyte rerun <run-name> --recover --allow-missing-outputs
+```
+
+| Option | Description |
+|---|---|
+| `--recover` | Reuse succeeded actions; re-run only what failed or never ran |
+| `--action-name <action>` | Re-run only this action (cannot be combined with `--recover`) |
+| `--force-rerun-action <action>` | With `--recover`, re-execute an action that already succeeded (repeatable) |
+| `--allow-missing-outputs` | Proceed when the source run's outputs were cleaned up |
+| `-e` / `--env KEY=VALUE` | Set an env var on the new run |
+
+Action names are deterministic hashes, not positions — list them with `flyte get action <run-name>`. Reused actions land in the `RECOVERED` phase (terminal, success-equivalent), so `flyte get action <run-name>` shows exactly what recovery skipped.
+
+> [!WARNING] Recovered actions keep their **original** outputs. Recovery does not recompute them against new inputs — name the actions that must re-execute in `--force-rerun-action`.
+
+### Recover programmatically
+
+```python
+import flyte
+flyte.init_from_config()
+
+# Re-run everything with the prior run's inputs
+flyte.rerun("<run-name>")
+
+# Reuse the succeeded actions, re-running only what failed or never ran
+flyte.rerun("<run-name>", recover=True)
+
+# Force specific actions to re-execute even though they succeeded
+flyte.rerun("<run-name>", recover=True, force_rerun_actions=["a3", "a7"])
+
+# Change inputs, keeping the ones you leave out, and still reuse succeeded actions
+flyte.rerun("<run-name>", recover=True, threshold=0.9)
+
+# Re-run a single action rooted at its task
+flyte.rerun("<run-name>", action_name="a3")
+
+flyte.with_runcontext(name="retry-1", env_vars={"LOG_LEVEL": "20"}).rerun("<run-name>", recover=True)
+```
+
+> [!NOTE] Task inputs share the keyword namespace with these arguments, so a task input named `run_name`, `action_name`, `recover`, `force_rerun_actions`, or `allow_missing_source_outputs` cannot be passed via `flyte.rerun`.
 
 ## Running Tasks (vs Workflows)
 
@@ -346,7 +432,7 @@ async def get_run_data(run_name: str) -> flyte.io.File:
 @env.task
 async def upload_local_data(file_path: str) -> flyte.io.File:
     """Upload local file to remote storage for a run."""
-    return flyte.io.File(path=file_path)
+    return await flyte.io.File.from_local(file_path)
 ```
 
 ### S3 / GCS / Azure access

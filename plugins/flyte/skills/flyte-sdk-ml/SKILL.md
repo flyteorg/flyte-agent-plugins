@@ -65,7 +65,7 @@ async def train(
     output_path = "/tmp/model_checkpoint"
     model.save_pretrained(output_path)
     tokenizer.save_pretrained(output_path)
-    return flyte.io.File(path=output_path)
+    return await flyte.io.File.from_local(output_path)
 
 @env.task
 async def main(
@@ -77,8 +77,8 @@ async def main(
 ) -> dict:
     hyperparams = {"lr": lr, "batch_size": batch_size, "epochs": epochs}
     checkpoint = await train(
-        train_data=flyte.io.File(path=train_uri),
-        val_data=flyte.io.File(path=val_uri),
+        train_data=flyte.io.File.from_existing_remote(train_uri),
+        val_data=flyte.io.File.from_existing_remote(val_uri),
         hyperparams=hyperparams,
     )
     return {"checkpoint": checkpoint, "hyperparams": hyperparams}
@@ -125,7 +125,7 @@ async def train_sklearn(
 
     path = f"/tmp/{model_type}_model.joblib"
     joblib.dump(model, path)
-    return flyte.io.File(path=path)
+    return await flyte.io.File.from_local(path)
 ```
 
 ### HuggingFace Trainer
@@ -194,7 +194,7 @@ async def train_hf(
     trainer.save_model("/tmp/final_model")
     tokenizer.save_pretrained("/tmp/final_model")
 
-    return flyte.io.File(path="/tmp/final_model")
+    return await flyte.io.File.from_local("/tmp/final_model")
 ```
 
 ## Hyperparameter Optimization
@@ -303,7 +303,7 @@ async def track_experiment(
     path = f"/tmp/experiments/{experiment_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(path, "w") as f:
         json.dump(record, f, indent=2)
-    return flyte.io.File(path=path)
+    return await flyte.io.File.from_local(path)
 
 @env.task
 async def compare_experiments(
@@ -339,7 +339,7 @@ async def track_inference(
     path = f"/tmp/inference/{model_uri.split('/')[-1]}_{datetime.datetime.now().strftime('%Y%m%d')}.json"
     with open(path, "w") as f:
         json.dump(record, f, indent=2)
-    return flyte.io.File(path=path)
+    return await flyte.io.File.from_local(path)
 ```
 
 ## Model Evaluation and Selection
@@ -430,7 +430,7 @@ async def generate_comparison_report(
 
     path = "/tmp/model_comparison.png"
     fig.savefig(path, bbox_inches="tight")
-    return flyte.io.File(path=path)
+    return await flyte.io.File.from_local(path)
 ```
 
 ## Batch Inference
@@ -496,7 +496,7 @@ async def batch_predict(
     results = pl.DataFrame({"prediction": all_preds, "probability": all_probs})
     path = f"/tmp/predictions_{data_file.path.split('/')[-1]}"
     results.write_parquet(path)
-    return flyte.io.File(path=path)
+    return await flyte.io.File.from_local(path)
 
 @env.task
 async def batch_inference(
@@ -507,7 +507,7 @@ async def batch_inference(
     model_ctx = await load_model(model_uri)
     # Fan out inference across files
     results = await flyte.map(
-        lambda f: batch_predict(model_ctx, flyte.io.File(path=f)),
+        lambda f: batch_predict(model_ctx, flyte.io.File.from_existing_remote(f)),
         data_files,
     )
     return results
