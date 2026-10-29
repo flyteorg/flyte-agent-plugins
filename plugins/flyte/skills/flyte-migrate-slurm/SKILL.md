@@ -494,7 +494,50 @@ Do not start with the thing Slurm does best.
 2. **Single-node training next** — one `TaskEnvironment`, one GPU resource string, checkpoints to object storage. At this point you've validated that your image builds, your data streams, and your logs are where you expect.
 3. **Multi-node training last** — once images, data, and observability are proven. `ClusteredTaskEnvironment` is the piece with the most moving parts and the least tolerance for a half-migrated environment.
 
-Nothing forces a big bang: Slurm and Flyte can run side by side indefinitely, and a Flyte task can `subprocess` out to `sbatch` during the overlap if you need a bridge.
+Nothing forces a big bang: Slurm and Flyte can run side by side indefinitely. For the overlap, use the Slurm connector below rather than shelling out to `sbatch`.
+
+## Keeping jobs on Slurm: `flyteplugins-slurm`
+
+When a job should stay on the Slurm cluster, the `flyteplugins-slurm` connector submits it over SSH and tracks it from Flyte. It is also the Flyte 2 replacement for the Flyte 1 Slurm agent (`flytekitplugins-slurm`):
+
+| Flyte 1 (`flytekitplugins-slurm`) | Flyte 2 (`flyteplugins-slurm`) |
+|---|---|
+| `SlurmTask(task_config=SlurmRemoteScript(batch_script_path=...))` | `SlurmScriptTask(script="#!/bin/bash\nbash /path/to/job.sh", plugin_config=Slurm(...))` |
+| `SlurmShellTask(script=..., task_config=Slurm(...))` | `SlurmScriptTask(script=..., plugin_config=Slurm(...), inputs={...})` |
+| `@task(task_config=SlurmFunction(...))` | `TaskEnvironment(plugin_config=Slurm(...))` + `@env.task` |
+
+`Slurm(...)` takes the connection (`host`, `username`, `ssh_private_key` as a Flyte secret name) and the job options (`partition`, `nodes`, `ntasks`, `mem`, `time_limit`, `modules`, `sbatch_options={...}`, ...).
+
+A `SlurmScriptTask` is not created through an `@env.task` decorator, so it has no parent environment, and running it fails with `RuntimeSystemError: Task basic has no parent environment name`. Wrap it with `TaskEnvironment.from_task` and make the calling environment depend on that:
+
+```python
+import flyte
+from flyteplugins.slurm import Slurm, SlurmScriptTask
+
+slurm = Slurm(
+    host="login.hpc.example.com",
+    username="ubuntu",
+    ssh_private_key="slurm-ssh-private-key",  # name of a Flyte secret
+    partition="debug",
+    sbatch_options={"job-name": "job0"},
+)
+
+job = SlurmScriptTask(
+    name="basic",
+    script="#!/bin/bash\nbash /home/ubuntu/echo.sh\n",
+    plugin_config=slurm,
+)
+
+slurm_env = flyte.TaskEnvironment.from_task("slurm_scripts", job)
+
+driver = flyte.TaskEnvironment(name="slurm_driver", depends_on=[slurm_env])
+
+@driver.task
+async def main() -> None:
+    await job()
+```
+
+Function tasks that run on Slurm need `flyteplugins-slurm` in their image (`Image.from_debian_base().with_pip_packages("flyteplugins-slurm")`). For other plugins, see `flyte-migrate-plugins`.
 
 ## Gotchas
 
@@ -527,5 +570,6 @@ Nothing forces a big bang: Slurm and Flyte can run side by side indefinitely, an
 
 - **`flyte-sdk-ml`** — greenfield ML authoring in Flyte 2 (training, HPO, inference) once the migration shape is clear.
 - **`flyte-migrate`** — the entry point if you _also_ have Flyte 1 (`flytekit`) code to port.
+- **`flyte-migrate-plugins`** — `flytekitplugins-*` to `flyteplugins-*`, including the Slurm connector.
 - **`flyte-sdk-ship`** — image specs, dependency management, and reproducible builds, i.e. everything that replaces `module load`.
 - **`flyte-sdk-app`** — serving and endpoints, for the step after training that Slurm never covered.

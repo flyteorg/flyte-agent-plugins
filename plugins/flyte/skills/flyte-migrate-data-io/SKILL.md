@@ -27,10 +27,36 @@ Flyte 2 renames the offloaded-data types and makes their I/O `async`, but the me
 | `flytekit.types.structured.StructuredDataset` | `flyte.io.DataFrame` | build with `from_df`, read with `open(...).all()` |
 | `@dataclass_json` + `@dataclass` | plain `@dataclass` | no mixin needed |
 | Pydantic `BaseModel` (+ config) | plain Pydantic `BaseModel` | works directly as task I/O |
+| `np.ndarray` (offloaded as `.npy`), and other types with no transformer | No transformer; falls back to pickle | Pass large values as a `File` (see below) |
+
+### Values with no type transformer, such as `np.ndarray`
+
+Flyte 1 had a numpy transformer that offloaded arrays as `.npy` files. Flyte 2 has none, so an `np.ndarray`, like any type without a transformer, falls back to pickle. The pickle fallback decides whether to store the value inline or offload it by `sys.getsizeof`, and stores it inline below 10 KB. A sliced view, such as the halves of a train/test split, reports about 160 bytes however large the data, so it is stored inline. A large dataset passed this way fails with `Inputs exceed max_bytes limit of 10.0 MB, actual size: 23.4 MB`.
+
+Pass large arrays as a `File` instead:
+
+```python
+import numpy as np
+from flyte.io import File
+
+@env.task
+async def load_data() -> File:
+    x_train, y_train = ...
+    np.savez("/tmp/data.npz", x_train=x_train, y_train=y_train)
+    return await File.from_local("/tmp/data.npz")
+
+@env.task
+async def train(data: File) -> float:
+    arrays = np.load(await data.download())
+    x_train, y_train = arrays["x_train"], arrays["y_train"]
+    ...
+```
+
+A pickled value also needs its library in the image of every task that receives it, including the calling task (see `flyte-migrate-tasks-workflows`).
 
 ## Offloaded Data: The Mental Model
 
-`File`, `Dir`, and `DataFrame` are lightweight references (pointers) to data offloaded in blob storage — not the materialized bytes. In Flyte 2 the read/write operations are `async`: upload with `await File.from_local(local_path)`, read with `async with f.open("rb") as fh: await fh.read()`, build a frame with `flyte.io.DataFrame.from_df(df)` (sync constructor), and read it with `await fdf.open(pandas.DataFrame).all()`.
+`File`, `Dir`, and `DataFrame` are lightweight references (pointers) to data offloaded in blob storage — not the materialized bytes. In Flyte 2 the read/write operations are `async`: upload with `await File.from_local(local_path)`, read with `async with f.open("rb") as fh: bytes(await fh.read())`, build a frame with `flyte.io.DataFrame.from_df(df)` (sync constructor), and read it with `await fdf.open(pandas.DataFrame).all()`.
 
 ## Files and Directories
 
@@ -81,7 +107,8 @@ async def write_file(content: str) -> File:
 @env.task
 async def read_file(f: File) -> str:
     async with f.open("rb") as fh:
-        return (await fh.read()).decode("utf-8")
+        # read() returns an obstore Bytes buffer, which has no .decode(); convert to bytes first.
+        return bytes(await fh.read()).decode("utf-8")
 
 @env.task
 async def main(content: str) -> str:
@@ -145,7 +172,20 @@ async def main() -> float:
     return await total_payroll(await make_df())
 ```
 
-Add the dataframe dependencies (for example `pandas` and `pyarrow`) to the `TaskEnvironment` image. See [DataFrames](https://www.union.ai/docs/v2/flyte/user-guide/task-programming/dataframes) for more.
+Flyte 1 converted a `pd.DataFrame` to a `StructuredDataset` implicitly when it flowed between tasks. Flyte 2 does not: inside a driver task, a sub-task that returns `pd.DataFrame` hands back a real pandas object, and passing it to a sub-task typed `flyte.io.DataFrame` fails with `Type conversion failed ... Did you forget to wrap your dataframe in a DataFrame instance?`. Wrap it at the call site:
+
+```python
+@env.task
+async def get_df() -> pd.DataFrame:
+    return pd.DataFrame({"salary": [50000, 60000]})
+
+@env.task
+async def main() -> float:
+    pandas_df = await get_df()
+    return await total_payroll(flyte.io.DataFrame.from_df(pandas_df))
+```
+
+Add the dataframe dependencies (for example `pandas` and `pyarrow`) to the `TaskEnvironment` image. `pyarrow` is needed whenever a task returns a `pd.DataFrame` or a `flyte.io.DataFrame`, because both are written as Parquet; without it the task fails while encoding its output. See [DataFrames](https://www.union.ai/docs/v2/flyte/user-guide/task-programming/dataframes) for more.
 
 ## Dataclasses and Structured Types
 
@@ -307,3 +347,4 @@ async def main() -> int:
 4. **Don't materialize large data into task outputs** — return `File`, `Dir`, or `DataFrame` references, not the raw bytes or full frames.
 5. **Don't forget the dataframe dependencies** — add `pandas` and `pyarrow` (or your engine) to the `TaskEnvironment` image so DataFrame I/O works remotely.
 6. **Don't import from `flytekit.types.*`** — import `File` and `Dir` from `flyte.io`, and use `flyte.io.DataFrame`.
+7. **Don't pass large `np.ndarray`s between tasks** — there is no numpy transformer; pickled arrays (especially sliced views) can be stored inline and break the 10 MB limit. Save to `.npz` and pass a `File`.

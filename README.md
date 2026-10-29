@@ -6,7 +6,7 @@ A plugin marketplace for working with [Flyte](https://flyte.org) — in
 [Google Antigravity](https://antigravity.google), or any agent harness that supports
 [Agent Skills](https://agentskills.io).
 
-21 skills, plus two **MCP servers** that let Claude search Flyte docs and act on your own
+25 skills, plus two **MCP servers** that let Claude search Flyte docs and act on your own
 cluster. `uvx flyte-skills install` gets you the skills in any harness;
 `uvx flyte-agent-plugins mcp install` adds the servers, and installing the `flyte` plugin
 gets you both at once — see [Bundled MCP servers](#bundled-mcp-servers).
@@ -19,7 +19,7 @@ This guide assumes that you have [uv installed](https://docs.astral.sh/uv/gettin
 uvx flyte-skills install
 ```
 
-That copies all 21 skills into whichever harness directories it finds on your machine —
+That copies all 25 skills into whichever harness directories it finds on your machine —
 no arguments needed. (`pip install flyte-agent-plugins` then `flyte-agent-plugins install` works the
 same way.)
 
@@ -80,7 +80,7 @@ convention shared across agent CLIs, so any harness honouring it picks the skill
 without a harness-specific flag. `--dir <path>` writes them anywhere else you like — both
 work the same with `--project`, `--dry-run`, and `uninstall`.
 
-**Two packages.** `flyte-skills` and `flyte-agent-plugins` carry the same 21 skills, so
+**Two packages.** `flyte-skills` and `flyte-agent-plugins` carry the same 25 skills, so
 every `install` command above works under either name. They differ in one thing: only
 `flyte-agent-plugins` ships the `mcp` subcommand, so reach for it when you want the MCP
 servers too. To pin a version,
@@ -88,7 +88,7 @@ servers too. To pin a version,
 
 ## Install as a plugin (Claude Code, Codex, and Antigravity)
 
-Installing the plugin instead of the skills gets you the same 21 skills **plus** both MCP
+Installing the plugin instead of the skills gets you the same 25 skills **plus** both MCP
 servers, which are declared in `plugins/flyte/.mcp.json`.
 
 ### Claude Code
@@ -156,20 +156,20 @@ The skills are plain [Agent Skills](https://agentskills.io) (`SKILL.md` + YAML
 frontmatter), so they work in any harness that supports the standard. `flyte-agent-plugins
 install` above covers all of them; each harness also has its own installer, which is what you
 want when you would rather track the repo than a release, or to install a single skill
-rather than all 21.
+rather than all 25.
 
 | Harness | Skills | MCP servers | `flyte-agent-plugins install` |
 |---|---|---|---|
-| Claude Code | all 21 | both, automatically | `--target claude` |
-| Codex CLI | all 21 | both, automatically | `--target agents` |
-| Antigravity | all 21 | both, via the plugin | `--target agents --project` |
+| Claude Code | all 25 | both, automatically | `--target claude` |
+| Codex CLI | all 25 | both, automatically | `--target agents` |
+| Antigravity | all 25 | both, via the plugin | `--target agents --project` |
 | Hermes | per-skill | none — add manually | `--target hermes` |
-| opencode | all 21 | none — add manually | `--target opencode` |
-| pi | all 21 | none — add manually | `--target pi` |
+| opencode | all 25 | none — add manually | `--target opencode` |
+| pi | all 25 | none — add manually | `--target pi` |
 
 ### Hermes
 
-`flyte-agent-plugins install --target hermes` writes all 21 into `~/.hermes/skills/`, which Hermes
+`flyte-agent-plugins install --target hermes` writes all 25 into `~/.hermes/skills/`, which Hermes
 auto-discovers with no registration step. Add `--project` for `<repo>/.hermes/skills/` —
 project skills need `hermes skills trust` before first use.
 
@@ -253,6 +253,8 @@ Convert existing Flyte 1 (`flytekit`) code to Flyte 2. Distilled from the offici
 | [`flyte-migrate-data-io`](plugins/flyte/skills/flyte-migrate-data-io) | Migrate data types & I/O: `FlyteFile`/`FlyteDirectory`→`flyte.io.File`/`Dir`, `StructuredDataset`→`flyte.io.DataFrame`, dataclasses/Pydantic as task I/O. |
 | [`flyte-migrate-ml`](plugins/flyte/skills/flyte-migrate-ml) | Migrate ML workloads (training, HPO, GPU/deep learning, batch inference, end-to-end pipelines) and the new-in-v2 patterns (real-time serving, apps, sandboxed execution) they unlock. |
 | [`flyte-migrate-slurm`](plugins/flyte/skills/flyte-migrate-slurm) | Migrate Slurm (`sbatch`/`srun`) workloads: `#SBATCH` pragmas → `TaskEnvironment` config, job arrays → `flyte.map`, `--dependency` chains → plain Python, multi-node `srun` → `ClusteredTaskEnvironment`, `--requeue` → retries/checkpoints/spot. |
+| [`flyte-migrate-plugins`](plugins/flyte/skills/flyte-migrate-plugins) | Map `flytekitplugins-*` to `flyteplugins-*` (Spark, Ray, Dask, PyTorch Elastic, BigQuery, Snowflake, Databricks, dbt, papermill, wandb, mlflow, pandera, Slurm), list the integrations with no v2 plugin and their replacements, and the API changes that break a literal port. |
+| [`flyte-migrate-troubleshoot`](plugins/flyte/skills/flyte-migrate-troubleshoot) | Fix errors in freshly migrated code, indexed by error text: relative imports, missing `depends_on`, unwrapped DataFrames, `RuntimeUserError` instead of the original exception, notebooks missing from the pod, `https://` `File` inputs, `NamedTuple` outputs, and shell tasks that exit 1 with an empty message. Includes a compile → `--local` → remote debug loop. |
 
 Example:
 

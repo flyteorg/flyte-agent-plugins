@@ -224,6 +224,8 @@ Migrate by theme. Start with tasks and workflows, then jump to whatever the work
 - **`flyte-migrate-data-io`** — `FlyteFile`/`FlyteDirectory` → `flyte.io.File`/`Dir`, `StructuredDataset` → `flyte.io.DataFrame`, dataclasses, and ETL patterns.
 - **`flyte-migrate-ml`** — small-model training, hyperparameter optimization, deep learning, batch inference, and end-to-end pipelines.
 - **`flyte-migrate-slurm`** — Slurm/HPC workloads: `#SBATCH` directives → `TaskEnvironment` resources, job arrays → `flyte.map`, multi-node `srun` training → clustered environments.
+- **`flyte-migrate-plugins`** — `flytekitplugins-*` → `flyteplugins-*`: which integrations have a v2 plugin, which don't and what to use instead, `task_config=` → `plugin_config=`, and wrapping connector tasks with `TaskEnvironment.from_task`.
+- **`flyte-migrate-troubleshoot`** — migrated code fails on `flyte run`: an error index for relative imports, missing `depends_on`, unwrapped DataFrames, uncaught `RuntimeUserError`, files missing from the pod, `https://` `File` inputs, `NamedTuple` outputs, and shell tasks. Includes the compile → `--local` → remote debug loop.
 
 ## Hybrid v1 and v2 pipelines
 

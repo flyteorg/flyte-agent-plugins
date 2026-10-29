@@ -166,11 +166,17 @@ async def train_fold(max_depth: int) -> float:
 async def main(max_depth: int) -> float:
     try:
         return await train_fold(max_depth)
-    except ValueError as e:
+    except flyte.errors.RuntimeUserError as e:
+        # A failed sub-task does not re-raise its original exception type.
+        # It arrives as RuntimeUserError, with the original class name in e.code.
+        if e.code != "ValueError":
+            raise
         print(f"invalid hyperparameter ({e}); falling back to a safe default")
         # Recover with a safe default instead of failing the whole run.
         return await train_fold(max_depth=6)
 ```
+
+An `except ValueError:` around `await train_fold(...)` never matches, either on a cluster or with `flyte run --local`: the parent receives `flyte.errors.RuntimeUserError`, and the original exception's class name is in its `code`. Check `e.code` as above, or catch `Exception` when any failure should be handled (the usual replacement for `on_failure`).
 
 Flyte 2 also exposes typed errors, so you can catch a specific failure and retry with more resources — a common need for memory-hungry training jobs:
 
@@ -232,6 +238,16 @@ def main(n: int, model_version: int) -> list[int]:
     # flyte.map is a drop-in for map_task, but it returns a generator, so wrap
     # it in list() to materialize the results.
     return list(flyte.map(bound, range(n), concurrency=10))
+```
+
+`flyte.map` accepts a `partial` only if it leaves **exactly one** parameter unbound. A Flyte 1 `map_task(partial(...))` that mapped over several list inputs at once fails with `Partial function must leave exactly one parameter unspecified for mapping. Found 2 unspecified parameters`. Pass one iterable per parameter instead, positionally, zipped like the built-in `map`:
+
+```python
+# Flyte 1: map_task(multi_input_task)(quantity=list_q, price=list_p, shipping=list_s)
+@env.task
+def main(list_q: list[int], list_p: list[float], shipping: float) -> list[float]:
+    # One iterable per parameter, in parameter order; repeat a constant to the same length.
+    return list(flyte.map(multi_input_task, list_q, list_p, [shipping] * len(list_q)))
 ```
 
 ### Flyte 2 (asyncio.gather)

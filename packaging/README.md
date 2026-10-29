@@ -4,10 +4,10 @@ The skills in `plugins/flyte/` are published from this one source of truth:
 
 | Registry | Package | Skills | `mcp` subcommand | Status |
 |---|---|---|---|---|
-| PyPI | [`flyte-agent-plugins`](https://pypi.org/project/flyte-agent-plugins/) | all 21 | yes | published |
-| PyPI | [`flyte-skills`](https://pypi.org/project/flyte-skills/) | all 21 | no | published |
-| npm | `flyte-agent-plugins` | all 21 | yes | **built, not published** |
-| npm | `flyte-skills` | all 21 | no | **built, not published** |
+| PyPI | [`flyte-agent-plugins`](https://pypi.org/project/flyte-agent-plugins/) | all 25 | yes | published |
+| PyPI | [`flyte-skills`](https://pypi.org/project/flyte-skills/) | all 25 | no | published |
+| npm | `flyte-agent-plugins` | all 25 | yes | **built, not published** |
+| npm | `flyte-skills` | all 25 | no | **built, not published** |
 
 **npm publishing is currently disabled** while distribution focuses on pip/uvx.
 The npm packages are still generated, packed, and validated on every CI run, so
