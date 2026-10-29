@@ -64,6 +64,11 @@ Convert existing Flyte 1 (`flytekit`) code to Flyte 2, distilled from the offici
 - **`flyte-migrate-slurm`** — Slurm (`sbatch`/`srun`) → Flyte 2: `#SBATCH` pragmas →
   `TaskEnvironment` config, job arrays → `flyte.map`, `--dependency` chains → plain Python,
   multi-node `srun` → `ClusteredTaskEnvironment`, `--requeue` → retries/checkpoints/spot.
+- **`flyte-migrate-plugins`** — `flytekitplugins-*` → `flyteplugins-*`, integrations with no
+  v2 plugin and their replacements, `task_config=` → `plugin_config=`, and connector tasks.
+- **`flyte-migrate-troubleshoot`** — errors in freshly migrated code, indexed by error text:
+  relative imports, missing `depends_on`, unwrapped DataFrames, `RuntimeUserError`, files
+  missing from the pod, `https://` `File` inputs, `NamedTuple` outputs, and shell tasks.
 
 ## Bundled MCP servers
 

@@ -99,7 +99,7 @@ image = (
 | Constructor | Use case |
 |---|---|
 | `Image.from_debian_base()` | Most common; includes the Flyte SDK |
-| `Image.from_base(image_uri)` | Start from any existing image |
+| `Image.from_base(image_uri)` | Start from any existing image (call `.clone(name=..., extendable=True)` before any `.with_*`) |
 | `Image.from_dockerfile(path)` | Complex custom builds |
 | `Image.from_uv_script(path)` | UV-based projects |
 
@@ -116,9 +116,20 @@ Common chainable builder methods: `.with_pip_packages(...)`, `.with_requirements
 | `env` | `.with_env_vars()` | Method instead of param |
 | `commands` | `.with_commands()` | Method instead of param |
 | `copy` / `source_root` | `.with_source_file()` / `.with_source_folder()` | More explicit methods |
-| `base_image` | `Image.from_base()` | Different constructor |
+| `base_image` | `Image.from_base()` + `.clone(extendable=True)` | Different constructor; see below |
 | `builder` | Config file or `flyte.init()` | Global setting |
 | `platform` | `platform` (constructor) | Tuple: `("linux/amd64", "linux/arm64")` |
+
+An image from `Image.from_base()` is not extendable, so chaining `.with_*` onto it fails when the module loads with `ValueError: Cannot add additional layers to a non-extendable image`. Clone it as extendable first:
+
+```python
+# Flyte 1: ImageSpec(base_image="ghcr.io/flyteorg/rawcontainers-python:v2", packages=["pandas"])
+image = (
+    Image.from_base("ghcr.io/flyteorg/rawcontainers-python:v2")
+    .clone(name="rawcontainers-python-pandas", extendable=True)
+    .with_pip_packages("pandas")
+)
+```
 
 For a private registry, create an image-pull secret and reference it:
 
@@ -169,8 +180,8 @@ Caching is enabled at the env level with `cache="auto"` (or per-task on `@env.ta
 
 | Behavior | Description |
 |---|---|
-| `"auto"` | Cache results and reuse if available |
-| `"override"` | Always execute and overwrite the cache |
+| `"auto"` | Cache results; the version is computed from the function body, so any code change invalidates the cache |
+| `"override"` | Cache results under the explicit `version_override` string; the cache is invalidated only when you change it (the closest match to `cache_version`) |
 | `"disable"` | No caching (default for a `TaskEnvironment`) |
 
 ```python
@@ -182,7 +193,7 @@ def cached_task(x: int) -> int:
 
 # Advanced control (replaces cache_version, serialize, ignored_inputs, ...)
 @env.task(cache=flyte.Cache(
-    behavior="auto",
+    behavior="override",        # the SDK documents version_override for "override" only
     version_override="v1.0",
     serialize=True,
     ignored_inputs=("debug",),
@@ -308,7 +319,7 @@ def main(trigger_time: datetime = datetime(2024, 1, 1, 2, 0)) -> str:
     return f"retrained model at {trigger_time.isoformat()}"
 ```
 
-Triggers support `flyte.Cron("0 9 * * *", timezone="America/New_York")` and `flyte.FixedRate(timedelta(hours=1))` as automations, plus convenience constructors like `flyte.Trigger.hourly()` and `flyte.Trigger.daily()`.
+Triggers support `flyte.Cron("0 9 * * *", timezone="America/New_York")` and `flyte.FixedRate(60)` (an integer number of minutes, not a `timedelta`; a `timedelta` passes `flyte run` but fails at `flyte deploy`) as automations, plus convenience constructors like `flyte.Trigger.hourly()` and `flyte.Trigger.daily()`.
 
 ## CLI command mapping: pyflyte to flyte
 
@@ -444,7 +455,7 @@ For API-key authentication in non-interactive environments, use `flyte.init_from
 2. **Don't use `mem`, `ephemeral_storage`, or separate `requests`/`limits`** — use `memory`, `disk`, and a single `flyte.Resources` value that serves as both.
 3. **Don't pass GPUs with `gpu="1"` plus `accelerator=`** — combine type and count into one `Type:count` string like `gpu="A100:2"`.
 4. **Don't rebuild `ImageSpec`'s many constructor args** — start from a base (`Image.from_debian_base()`) and chain `.with_*` builder methods.
-5. **Don't keep `cache_version="1.0"`** — use `cache="auto"` for the common case, or `flyte.Cache(version_override=...)` for advanced control.
+5. **Don't keep `cache_version="1.0"`** — use `cache="auto"` for the common case, or `flyte.Cache(behavior="override", version_override=...)` to keep a manually bumped version.
 6. **Don't read secrets via `current_context().secrets.get(...)`** — declare them on the `TaskEnvironment` and read the injected environment variable with `os.environ` / `os.getenv`.
 7. **Don't recreate `LaunchPlan` + `CronSchedule`** — use `flyte.Trigger` with `flyte.Cron` attached to the task, and deploy it with `flyte deploy`.
 8. **Don't run `pyflyte ... --remote`** — `flyte run` is remote by default; add `--local` explicitly for in-process runs.

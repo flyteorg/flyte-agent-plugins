@@ -228,6 +228,57 @@ def my_task(x: int) -> int:
     return x
 ```
 
+### Calling tasks in another environment: `depends_on`
+
+In Flyte 1 each `@task` could set its own `container_image`, and a workflow could mix them freely. In Flyte 2, tasks with different images live in different `TaskEnvironment`s, and the environment of the calling task must declare the environments it calls in `depends_on`. Without it, the call fails at runtime with `Environment 'mindmeld' not found in image cache ... declare that dependency using 'depends_on=[...]'`: the callee's image was never resolved for the run. (Environments that share the same image object may happen to work without it; declare the dependency anyway.)
+
+```python
+# Flyte 1: @task(container_image=sklearn_image) def get_data(): ...
+mindmeld = flyte.TaskEnvironment(
+    name="mindmeld",
+    image=flyte.Image.from_debian_base().with_pip_packages("scikit-learn", "numpy"),
+)
+
+borebuster = flyte.TaskEnvironment(
+    name="borebuster",
+    image=flyte.Image.from_debian_base().with_pip_packages("numpy"),
+    depends_on=[mindmeld],  # the entrypoint below calls get_data, which runs in mindmeld
+)
+
+@mindmeld.task
+def get_data() -> list[float]:
+    ...
+
+@borebuster.task
+def main() -> list[float]:
+    return get_data()
+```
+
+The same applies to tasks not created with an `@env.task` decorator, such as plugin tasks (see `flyte-migrate-plugins`) and shell tasks: wrap them in an environment with `flyte.TaskEnvironment.from_task("name", task_a, task_b)` and add that environment to `depends_on`.
+
+**`depends_on` must not form a cycle.** If the driver environment depends on a worker environment and the worker also calls back into a task in the driver environment (`driver.depends_on=[worker]` plus `worker.add_dependency(driver)`), `flyte run` fails at submit with `maximum recursion depth exceeded`. Move the shared task into a third environment that both depend on:
+
+```python
+helpers = flyte.TaskEnvironment(name="helpers")                 # stringify() lives here
+worker = flyte.TaskEnvironment(name="worker", depends_on=[helpers])
+driver = flyte.TaskEnvironment(name="driver", depends_on=[worker, helpers])
+```
+
+**The caller's image must be able to deserialize what it receives.** A calling task materializes every sub-task output. If a task in another environment returns a value that falls back to pickle, such as a scikit-learn model, the caller's image needs that library too. Otherwise the caller fails with `Error converting input ... No module named sklearn`. This holds even when `depends_on` is correct. Add the library to the caller's image, or return a `File` (for example a saved model) instead of the object.
+
+### Mixing sync and async tasks
+
+Flyte 1 tasks were all called the same way. In Flyte 2, a task is sync or async depending on its `def`, and the call must match:
+
+| Caller | Callee | How to call |
+|---|---|---|
+| sync | sync | `result = t(x)` |
+| async | async | `result = await t(x)` |
+| async | sync (including plugin tasks like `NotebookTask`) | `result = await t.aio(x)`. A plain `t(x)` fails with `Sync task '...' was called in a blocking way from async code ... Use await t.aio(...)` |
+| sync | async | Don't. The call returns an un-awaited coroutine, and the caller fails later with `Expected value of type <class 'str'> but got '<coroutine object ...>'`. Make the caller `async`, or the callee sync |
+
+A literal port of a Flyte 1 workflow is sync throughout, so the simplest rule is: keep a migrated pipeline all sync or all async, and use `.aio()` at the boundary when an async driver calls a sync task.
+
 ## Parameter Mapping: `@task` to `TaskEnvironment` + `@env.task`
 
 | Flyte 1 `@task` parameter | Flyte 2 location | Notes |
@@ -238,7 +289,7 @@ def my_task(x: int) -> int:
 | `environment` | `TaskEnvironment(env_vars=...)` | Env-level only |
 | `secret_requests` | `TaskEnvironment(secrets=...)` | Env-level only |
 | `cache` | Both | Can override at task level |
-| `cache_version` | `flyte.Cache(version_override=...)` | In a `Cache` object |
+| `cache_version` | `flyte.Cache(behavior="override", version_override=...)` | In a `Cache` object |
 | `retries` | `@env.task(retries=...)` | Task-level only |
 | `timeout` | `@env.task(timeout=...)` | Task-level only |
 | `interruptible` | Both | Can override at task level |
@@ -256,3 +307,6 @@ For image, resource, secret, and caching detail, see the Task configuration migr
 4. **Don't put heavy compute in the orchestrating task** — keep the entrypoint task focused on calling other tasks; push CPU/GPU/memory-intensive work into leaf tasks whose resources you can tune per environment.
 5. **Don't set image, resources, or secrets on the `@env.task` decorator** — those are env-level and belong on `TaskEnvironment`. Only per-task overrides like `retries`, `timeout`, `cache`, and `short_name` go on `@env.task`.
 6. **Don't keep passing every argument by keyword** — Flyte 2 task calls accept positional arguments (`say_hello(name)`).
+7. **Don't call a task in another `TaskEnvironment` without `depends_on`** — the caller's environment must list the callee's environment, or the run fails with `Environment '...' not found in image cache`.
+8. **Don't make `depends_on` circular** — when two environments call each other, move the shared tasks into a third environment that both depend on.
+9. **Don't call an async task from a sync task** — it returns a coroutine instead of a result. From an async task, call sync tasks with `await t.aio(...)`.

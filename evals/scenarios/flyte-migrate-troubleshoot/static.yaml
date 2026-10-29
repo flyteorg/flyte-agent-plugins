@@ -1,0 +1,5 @@
+id: flyte-migrate-troubleshoot-static
+skill: flyte-migrate-troubleshoot
+tier: static
+# Static tier lints the SKILL.md itself (frontmatter, code fences, no secrets).
+# No agent, no LLM. Runs on every change.
